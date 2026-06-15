@@ -1,0 +1,290 @@
+{
+  "info": {
+    "_postman_id": "6f0f9d7d-6f4e-4f8d-9e90-2d8e0dfd9d10",
+    "name": "Sumex Demo Dashboard",
+    "description": "Postman collection for the Sumex demo dashboard API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Shifts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/shifts",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "shifts"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/dashboard?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dashboard"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Presses",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/presses?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "presses"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Alerts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/alerts?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Press 03",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Down\",\n  \"oee\": 0,\n  \"downtimeMinutes\": 95,\n  \"currentJob\": \"Maintenance Hold\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/presses/Press%2003?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "presses",
+            "Press%2003"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Dashboard Snapshot",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"overallOee\": 72.4,\n  \"totalOutput\": 17600,\n  \"goodParts\": 16320,\n  \"downtimeLabel\": \"3h 10m\",\n  \"downtimeMinutes\": 190,\n  \"activeAlerts\": 5,\n  \"criticalAlerts\": 3,\n  \"warningAlerts\": 2,\n  \"qualityRate\": 92.7\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/dashboard/snapshot?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "snapshot"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reset — Both Shifts",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/reset",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reset"
+          ]
+        },
+        "description": "Resets both Shift A and Shift B back to base demo seed values. Broadcasts an SSE update for each shift."
+      }
+    },
+    {
+      "name": "Reset — One Shift (query param)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/reset?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reset"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        },
+        "description": "Resets a single shift by passing the shift name as a query param."
+      }
+    },
+    {
+      "name": "Reset — One Shift (request body)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"Shift A\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/reset",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reset"
+          ]
+        },
+        "description": "Resets a single shift by passing shiftName in the request body."
+      }
+    },
+    {
+      "name": "Create Alert",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"severity\": \"critical\",\n  \"title\": \"Press 03 stopped\",\n  \"message\": \"Press 03 was switched to Down from Postman.\",\n  \"isActive\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/alerts?shift={{shiftName}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shiftName}}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "shiftName",
+      "value": "Shift A"
+    }
+  ]
+}
