@@ -1,5 +1,13 @@
 import { pool } from './db.js';
-import { getBaseDemoDashboard, getDemoDashboard, getShiftOptions } from './demoData.js';
+import {
+  capas,
+  calibrations,
+  employees,
+  getBaseDemoDashboard,
+  getDemoDashboard,
+  getShiftOptions,
+  suppliers
+} from './demoData.js';
 
 function toNumber(value) {
   return Number.parseFloat(value);
@@ -64,6 +72,7 @@ function getShiftFallback(shiftName) {
     summary: {
       overallOee: demo.overallOee,
       totalOutput: demo.totalOutput,
+      targetOutput: demo.targetOutput,
       goodParts: demo.goodParts,
       downtimeLabel: demo.downtimeLabel,
       downtimeMinutes: demo.downtimeMinutes,
@@ -75,7 +84,16 @@ function getShiftFallback(shiftName) {
     presses: demo.presses,
     downtime: demo.downtime,
     oeeTrend: demo.oeeTrend,
-    alerts: demo.alerts
+    alerts: demo.alerts,
+    orders: demo.orders,
+    materials: demo.materials,
+    defects: demo.defects,
+    prevShiftDefects: demo.prevShiftDefects,
+    ncrs: demo.ncrs,
+    suppliers,
+    employees,
+    capas,
+    calibrations
   };
 }
 
@@ -132,6 +150,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
     }
 
     const snapshot = snapshotResult.rows[0];
+    const fallback = getShiftFallback(shiftName);
     return {
       metadata: {
         shiftName: snapshot.shift_name,
@@ -145,6 +164,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
       summary: {
         overallOee: toNumber(snapshot.overall_oee),
         totalOutput: Number(snapshot.total_output),
+        targetOutput: fallback.summary.targetOutput,
         goodParts: Number(snapshot.good_parts),
         downtimeLabel: snapshot.downtime_label,
         downtimeMinutes: Number(snapshot.downtime_minutes),
@@ -178,7 +198,16 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
           hour: 'numeric',
           minute: '2-digit'
         })
-      }))
+      })),
+      orders: fallback.orders,
+      materials: fallback.materials,
+      defects: fallback.defects,
+      prevShiftDefects: fallback.prevShiftDefects,
+      ncrs: fallback.ncrs,
+      suppliers,
+      employees,
+      capas,
+      calibrations
     };
   } catch (error) {
     console.warn(`Falling back to demo data: ${error.message}`);
@@ -314,6 +343,7 @@ export async function updateDashboardSnapshot(shiftName, updates) {
     summary: {
       overallOee: toNumber(snapshot.overall_oee),
       totalOutput: Number(snapshot.total_output),
+      targetOutput: getShiftFallback(shiftName).summary.targetOutput,
       goodParts: Number(snapshot.good_parts),
       downtimeLabel: snapshot.downtime_label,
       downtimeMinutes: Number(snapshot.downtime_minutes),
