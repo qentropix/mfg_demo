@@ -9,8 +9,20 @@ import {
   suppliers
 } from './demoData.js';
 
+const extraNcrsByShift = new Map();
+
 function toNumber(value) {
   return Number.parseFloat(value);
+}
+
+function cloneNcr(ncr) {
+  return { ...ncr };
+}
+
+function getMergedNcrs(shiftName) {
+  const demo = getDemoDashboard(shiftName);
+  const extras = extraNcrsByShift.get(shiftName) ?? [];
+  return [...demo.ncrs.map(cloneNcr), ...extras.map(cloneNcr)].sort((a, b) => b.date - a.date);
 }
 
 function mapPressRow(row) {
@@ -79,7 +91,8 @@ function getShiftFallback(shiftName) {
       activeAlerts: demo.activeAlerts,
       criticalAlerts: demo.criticalAlerts,
       warningAlerts: demo.warningAlerts,
-      qualityRate: demo.qualityRate
+      qualityRate: demo.qualityRate,
+      inspectionPassRate: demo.qualityRate
     },
     presses: demo.presses,
     downtime: demo.downtime,
@@ -89,7 +102,7 @@ function getShiftFallback(shiftName) {
     materials: demo.materials,
     defects: demo.defects,
     prevShiftDefects: demo.prevShiftDefects,
-    ncrs: demo.ncrs,
+    ncrs: getMergedNcrs(shiftName),
     suppliers,
     employees,
     capas,
@@ -171,7 +184,8 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
         activeAlerts: Number(snapshot.active_alerts),
         criticalAlerts: Number(snapshot.critical_alerts),
         warningAlerts: Number(snapshot.warning_alerts),
-        qualityRate: toNumber(snapshot.quality_rate)
+        qualityRate: toNumber(snapshot.quality_rate),
+        inspectionPassRate: toNumber(snapshot.quality_rate)
       },
       presses: pressesResult.rows.map((row) => ({
         pressName: row.press_name,
@@ -203,7 +217,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
       materials: fallback.materials,
       defects: fallback.defects,
       prevShiftDefects: fallback.prevShiftDefects,
-      ncrs: fallback.ncrs,
+      ncrs: getMergedNcrs(shiftName),
       suppliers,
       employees,
       capas,
@@ -213,6 +227,21 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
     console.warn(`Falling back to demo data: ${error.message}`);
     return getShiftFallback(shiftName);
   }
+}
+
+export async function listNcrs(shiftName = 'Shift A') {
+  return getMergedNcrs(shiftName);
+}
+
+export async function createNcr(shiftName, ncr) {
+  const record = cloneNcr({
+    ...ncr,
+    shiftName
+  });
+  const current = extraNcrsByShift.get(shiftName) ?? [];
+  current.unshift(record);
+  extraNcrsByShift.set(shiftName, current);
+  return record;
 }
 
 export function getShifts() {
@@ -350,7 +379,8 @@ export async function updateDashboardSnapshot(shiftName, updates) {
       activeAlerts: Number(snapshot.active_alerts),
       criticalAlerts: Number(snapshot.critical_alerts),
       warningAlerts: Number(snapshot.warning_alerts),
-      qualityRate: toNumber(snapshot.quality_rate)
+      qualityRate: toNumber(snapshot.quality_rate),
+      inspectionPassRate: toNumber(snapshot.quality_rate)
     }
   };
 }
@@ -435,6 +465,10 @@ export async function createAlert(shiftName, alert) {
 
 export async function resetShift(shiftName = null) {
   const shifts = shiftName ? [shiftName] : ['Shift A', 'Shift B'];
+
+  for (const shift of shifts) {
+    extraNcrsByShift.delete(shift);
+  }
 
   if (!pool) {
     return { reset: shifts, mode: 'demo' };

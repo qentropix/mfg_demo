@@ -3,6 +3,7 @@ import { useCountUp } from './hooks.js';
 import { OeeTrendChart, DowntimeParetoChart } from './Charts.jsx';
 import PressPanel from './PressPanel.jsx';
 import OrderPanel from './OrderPanel.jsx';
+import AnomalyPanel from './AnomalyPanel.jsx';
 
 const shiftTabs = ['Shift A', 'Shift B'];
 const navSections = [
@@ -39,7 +40,7 @@ const tabMeta = {
   },
   Workforce: {
     title: 'Workforce',
-    description: 'Shift coverage, assignments, and team readiness across the line.'
+    description: 'Shift coverage, operator assignments, and machine readiness across the line.'
   },
   'Quality & NCR': {
     title: 'Quality & NCR',
@@ -81,13 +82,11 @@ const tabMeta = {
 
 const PLACEHOLDER_TABS = new Set([
   'Supply Chain',
-  'Workforce',
   'Quality & NCR',
   'Calibration',
   'Certifications',
   'Suppliers',
-  'CAPA',
-  'Anomaly Detector'
+  'CAPA'
 ]);
 
 function formatShortNumber(value) {
@@ -273,6 +272,92 @@ function PlaceholderCard({ tab }) {
   );
 }
 
+function ReportCard({ text, activeShift }) {
+  const sections = parseShiftReport(text);
+
+  return (
+    <div className="report-card">
+      <div className="report-header">
+        SHIFT HANDOVER REPORT · {activeShift} · {new Date().toLocaleString()}
+      </div>
+      {sections.length > 0 ? (
+        sections.map((section) => (
+          <div key={section.header} className="report-section">
+            <h4>{section.header}</h4>
+            <p>{section.body}</p>
+          </div>
+        ))
+      ) : (
+        <div className="report-fallback">
+          <p>{text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function employeeStatusTone(status) {
+  if (status === 'Active') return 'success';
+  if (status === 'On Break') return 'warning';
+  return 'danger';
+}
+
+function integrationTone(status) {
+  if (status === 'Connected') return 'success';
+  if (status === 'Configured') return 'warning';
+  return 'muted';
+}
+
+function anomalyTone(severity) {
+  return severity === 'Critical' ? 'danger' : 'warning';
+}
+
+function ncrStatusTone(status) {
+  if (status === 'Closed') return 'success';
+  if (status === 'Under Review') return 'warning';
+  return 'danger';
+}
+
+function formatRelativeMinutes(timestamp) {
+  if (!timestamp) return 'just now';
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m ago` : `${hours}h ago`;
+}
+
+function formatRelativeDate(timestamp) {
+  if (!timestamp) return 'just now';
+  const diffMs = Date.now() - timestamp;
+  const minutes = Math.max(0, Math.round(diffMs / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m ago` : `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  const dayRemainder = hours % 24;
+  return dayRemainder ? `${days}d ${dayRemainder}h ago` : `${days}d ago`;
+}
+
+function parseShiftReport(text) {
+  return text
+    .split(/###\s+/g)
+    .map((section) => section.trim())
+    .filter(Boolean)
+    .map((section) => {
+      const [header, ...body] = section.split('\n');
+      return {
+        header: header.trim(),
+        body: body.join('\n').trim()
+      };
+    });
+}
+
 function App() {
   const [shift, setShift] = useState('Shift A');
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -288,8 +373,71 @@ function App() {
   const [scenarioValue, setScenarioValue] = useState('');
   const [scenarioResult, setScenarioResult] = useState('');
   const [scenarioLoading, setScenarioLoading] = useState(false);
+  const [performanceSort, setPerformanceSort] = useState({ field: 'outputCount', dir: 'desc' });
+  const [optimizerResult, setOptimizerResult] = useState('');
+  const [optimizerLoading, setOptimizerLoading] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [anomalies, setAnomalies] = useState([]);
+  const [selectedAnomalyId, setSelectedAnomalyId] = useState(null);
+  const [ncrs, setNcrs] = useState([]);
+  const [qualityAnalysisText, setQualityAnalysisText] = useState('');
+  const [qualityAnalysisLoading, setQualityAnalysisLoading] = useState(false);
+  const [ncrModalOpen, setNcrModalOpen] = useState(false);
+  const [ncrForm, setNcrForm] = useState({
+    machine: '',
+    defectType: '',
+    qtyAffected: '1',
+    description: '',
+    severity: 'Medium'
+  });
+  const [anomalyThresholds, setAnomalyThresholds] = useState({
+    warningOeeDrop: 8,
+    criticalOee: 65,
+    sustainedTicks: 2
+  });
   const [freshnessSeconds, setFreshnessSeconds] = useState(0);
   const lastUpdatedRef = useRef(Date.now());
+  const prevOeeRef = useRef({});
+  const lowOeeCountRef = useRef({});
+  const integrations = [
+    {
+      name: 'ERP',
+      platforms: 'SAP · Oracle · Epicor · Infor',
+      status: 'Configured',
+      detail: 'Work order sync pending activation',
+      icon: '🏭'
+    },
+    {
+      name: 'MES',
+      platforms: 'Ignition · Wonderware · FactoryTalk',
+      status: 'Connected',
+      detail: 'Real-time stream active',
+      icon: '⚙'
+    },
+    {
+      name: 'Machine PLCs',
+      platforms: 'OPC-UA · Siemens · Allen-Bradley',
+      status: 'Connected',
+      detail: '6 machines reporting',
+      icon: '🔌'
+    },
+    {
+      name: 'Quality System',
+      platforms: 'ETQ · MasterControl · Intelex',
+      status: 'Available',
+      detail: 'Supported - not yet configured',
+      icon: '✓'
+    },
+    {
+      name: 'HR / Scheduling',
+      platforms: 'ADP · UKG · SAP HCM',
+      status: 'Available',
+      detail: 'Supported - not yet configured',
+      icon: '👥'
+    }
+  ];
 
   const baseUrl = import.meta.env.BASE_URL;
 
@@ -305,6 +453,14 @@ function App() {
   const partsAnim  = useCountUp(partsTarget, 0);
   const alertAnim  = useCountUp(alertTarget, 0);
   const dtAnim     = useCountUp(dtTarget, 0);
+
+  const activeAnomalies = useMemo(
+    () => anomalies.filter((anomaly) => !anomaly.resolved),
+    [anomalies]
+  );
+  const selectedAnomaly =
+    anomalies.find((anomaly) => anomaly.id === selectedAnomalyId) ?? activeAnomalies[0] ?? null;
+  const parsedReportSections = useMemo(() => parseShiftReport(reportText), [reportText]);
 
   const loadDashboard = async (signal) => {
     const response = await fetch(
@@ -335,6 +491,17 @@ function App() {
     });
 
     return () => controller.abort();
+  }, [shift]);
+
+  useEffect(() => {
+    setReportText('');
+    setReportLoading(false);
+  }, [shift]);
+
+  useEffect(() => {
+    setQualityAnalysisText('');
+    setQualityAnalysisLoading(false);
+    setNcrModalOpen(false);
   }, [shift]);
 
   useEffect(() => {
@@ -390,6 +557,228 @@ function App() {
 
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!selectedAnomalyId && activeAnomalies.length > 0) {
+      setSelectedAnomalyId(activeAnomalies[0].id);
+    }
+  }, [activeAnomalies, selectedAnomalyId]);
+
+  useEffect(() => {
+    setNcrs(payload?.ncrs ?? []);
+
+    if (!payload) return;
+
+    const machineOptions = payload.presses ?? [];
+    const defectOptions = payload.defects ?? [];
+
+    setNcrForm((current) => ({
+      ...current,
+      machine:
+        machineOptions.some((press) => press.pressName === current.machine)
+          ? current.machine
+          : machineOptions[0]?.pressName ?? '',
+      defectType:
+        defectOptions.some((defect) => defect.type === current.defectType)
+          ? current.defectType
+          : defectOptions[0]?.type ?? ''
+    }));
+  }, [payload?.ncrs, payload?.presses, payload?.defects, payload]);
+
+  useEffect(() => {
+    if (!payload?.presses?.length) return undefined;
+
+    const now = Date.now();
+    const detected = [];
+
+    payload.presses.forEach((press) => {
+      const prev = prevOeeRef.current[press.pressName];
+      const priorLowCount = lowOeeCountRef.current[press.pressName] ?? 0;
+      const trend = press.trend ?? [];
+
+      if (press.status === 'Down') {
+        detected.push({
+          id: `${press.pressName}-down`,
+          machine: press.pressName,
+          metric: 'Machine Status',
+          severity: 'Critical',
+          description: `${press.pressName} is in a Down state - safety lockout or fault`,
+          detectedAt: now,
+          resolved: false,
+          trend,
+          currentOee: press.oee,
+          status: press.status,
+          downtimeMinutes: press.downtimeMinutes
+        });
+      }
+
+      if (prev !== undefined && prev - press.oee > anomalyThresholds.warningOeeDrop) {
+        detected.push({
+          id: `${press.pressName}-oee-drop`,
+          machine: press.pressName,
+          metric: 'OEE Drop',
+          severity: 'Warning',
+          description: `${press.pressName} OEE dropped ${(prev - press.oee).toFixed(1)}% in the last cycle`,
+          detectedAt: now,
+          resolved: false,
+          trend,
+          currentOee: press.oee,
+          status: press.status,
+          downtimeMinutes: press.downtimeMinutes
+        });
+      }
+
+      if (press.status !== 'Running' && prev !== undefined) {
+        detected.push({
+          id: `${press.pressName}-minor-stop`,
+          machine: press.pressName,
+          metric: 'Status Change',
+          severity: 'Warning',
+          description: `${press.pressName} transitioned to ${press.status}`,
+          detectedAt: now,
+          resolved: false,
+          trend,
+          currentOee: press.oee,
+          status: press.status,
+          downtimeMinutes: press.downtimeMinutes
+        });
+      }
+
+      const nextLowCount = press.oee < anomalyThresholds.criticalOee ? priorLowCount + 1 : 0;
+      lowOeeCountRef.current[press.pressName] = nextLowCount;
+      if (nextLowCount >= anomalyThresholds.sustainedTicks) {
+        detected.push({
+          id: `${press.pressName}-sustained-low`,
+          machine: press.pressName,
+          metric: 'Sustained Low OEE',
+          severity: 'Critical',
+          description: `${press.pressName} OEE below ${anomalyThresholds.criticalOee}% for ${nextLowCount} consecutive cycles`,
+          detectedAt: now,
+          resolved: false,
+          trend,
+          currentOee: press.oee,
+          status: press.status,
+          downtimeMinutes: press.downtimeMinutes
+        });
+      }
+
+      prevOeeRef.current[press.pressName] = press.oee;
+    });
+
+    setAnomalies((current) => {
+      const detectedById = new Map(detected.map((item) => [item.id, item]));
+      const detectedIds = new Set(detectedById.keys());
+      const next = [];
+
+      current.forEach((anomaly) => {
+        const fresh = detectedById.get(anomaly.id);
+        if (fresh) {
+          next.push({
+            ...anomaly,
+            ...fresh,
+            resolved: false,
+            resolvedAt: null,
+            detectedAt: anomaly.detectedAt ?? fresh.detectedAt
+          });
+          return;
+        }
+
+        next.push({
+          ...anomaly,
+          resolved: true,
+          resolvedAt: anomaly.resolvedAt ?? now
+        });
+      });
+
+      detected.forEach((item) => {
+        if (!current.some((anomaly) => anomaly.id === item.id)) {
+          next.unshift(item);
+        }
+      });
+
+      return next;
+    });
+  }, [payload?.presses, anomalyThresholds]);
+
+  useEffect(() => {
+    const resolved = anomalies.some((anomaly) => anomaly.resolved);
+    if (!resolved) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setAnomalies((current) => current.filter((anomaly) => !anomaly.resolved));
+    }, 1200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [anomalies]);
+
+  const runShiftReport = async () => {
+    if (reportLoading) return;
+
+    setReportLoading(true);
+    setReportText('');
+
+    try {
+      const response = await fetch(`${baseUrl}api/ai/shift-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftName: shift })
+      });
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          setReportText('Shift report is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          return;
+        }
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setReportText('No streaming response was available.');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let finalText = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        finalText += chunk;
+        setReportText(finalText);
+      }
+
+      if (finalText.trim()) {
+        setReportHistory((current) => [
+          {
+            id: Date.now(),
+            shiftName: shift,
+            generatedAt: new Date().toISOString(),
+            text: finalText
+          },
+          ...current.slice(0, 4)
+        ]);
+      }
+    } catch (error) {
+      setReportText(error.message);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleCopyReport = async () => {
+    if (!reportText.trim()) return;
+    try {
+      await navigator.clipboard.writeText(reportText);
+    } catch {
+      setError('Unable to copy report to clipboard.');
+    }
+  };
+
+  const handleViewReport = (entry) => {
+    setReportText(entry.text);
+    setActiveTab('Reports');
+  };
 
   const stats = useMemo(() => {
     if (!payload) return [];
@@ -459,8 +848,59 @@ function App() {
 
   const topAlert = payload?.alerts?.[0] ?? null;
 
+  const qualityModel = useMemo(() => {
+    const summary = payload?.summary ?? {};
+    const totalOutput = summary.totalOutput ?? 0;
+    const goodParts = summary.goodParts ?? 0;
+    const inspectionPassRate = summary.inspectionPassRate ?? summary.qualityRate ?? 0;
+    const qualityHoldMinutes = payload?.downtime?.find((item) => item.reason === 'Quality Hold')?.minutes ?? 0;
+    const firstPassYield = totalOutput > 0 ? (goodParts / totalOutput) * 100 : 0;
+    const reworkRate = (qualityHoldMinutes / 480) * 100;
+    const scrapRate = totalOutput > 0 ? ((totalOutput - goodParts) / totalOutput) * 100 : 0;
+    const defectRows = (payload?.defects ?? [])
+      .map((defect) => {
+        const previousCount = payload?.prevShiftDefects?.find((item) => item.type === defect.type)?.count ?? 0;
+        const delta = defect.count - previousCount;
+        return {
+          ...defect,
+          previousCount,
+          delta,
+          tone: delta > 0 ? 'danger' : delta < 0 ? 'success' : 'muted'
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+    const topRiskMachine = [...(payload?.presses ?? [])].sort((a, b) => a.oee - b.oee)[0] ?? null;
+
+    return {
+      metrics: [
+        {
+          title: 'First Pass Yield',
+          value: `${firstPassYield.toFixed(1)}%`,
+          note: `${goodParts.toLocaleString()} good / ${totalOutput.toLocaleString()} total`
+        },
+        {
+          title: 'Rework Rate',
+          value: `${reworkRate.toFixed(1)}%`,
+          note: `${qualityHoldMinutes}m quality hold`
+        },
+        {
+          title: 'Scrap Rate',
+          value: `${scrapRate.toFixed(1)}%`,
+          note: `${Math.max(totalOutput - goodParts, 0).toLocaleString()} pieces`
+        },
+        {
+          title: 'Inspection Pass Rate',
+          value: `${inspectionPassRate.toFixed(1)}%`,
+          note: 'From live shift summary'
+        }
+      ],
+      defectRows,
+      topRiskMachine,
+      openNcrCount: ncrs.filter((ncr) => ncr.status !== 'Closed').length
+    };
+  }, [ncrs, payload]);
+
   const badgeCounts = useMemo(() => {
-    const ncrs = payload?.ncrs ?? [];
     const capas = payload?.capas ?? [];
     const calibrations = payload?.calibrations ?? [];
     const employees = payload?.employees ?? [];
@@ -475,7 +915,92 @@ function App() {
       ).length,
       Alerts: alerts.length
     };
-  }, [payload]);
+  }, [payload, ncrs]);
+
+  const syncLog = useMemo(
+    () => [
+      {
+        system: 'MES',
+        timestamp: `${Math.floor((Date.now() % 120000) / 1000)}s ago`,
+        records: '847 production records',
+        status: 'Connected'
+      },
+      {
+        system: 'Machine PLCs',
+        timestamp: 'Real-time',
+        records: 'OPC-UA stream active since 06:00',
+        status: 'Connected'
+      },
+      {
+        system: 'ERP',
+        timestamp: 'Pending activation',
+        records: '—',
+        status: 'Configured'
+      }
+    ],
+    [freshnessSeconds]
+  );
+
+  const workforceModel = useMemo(() => {
+    const employees = payload?.employees ?? [];
+    const presses = payload?.presses ?? [];
+
+    const coverageGapEmployees = employees.filter((employee) => employee.shiftStatus === 'Absent');
+    const expiredCertEmployees = employees.filter((employee) =>
+      employee.certifications?.some(
+        (cert) =>
+          cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase()) &&
+          cert.status === 'Expired'
+      )
+    );
+
+    const performanceRows = presses
+      .map((press) => {
+        const employee = employees.find(
+          (item) => item.assignedMachine === press.pressName && item.shiftStatus === 'Active'
+        );
+
+        return {
+          ...press,
+          employeeName: employee?.name ?? 'Unassigned',
+          employeeId: employee?.id ?? null,
+          employeeStatus: employee?.shiftStatus ?? 'Unassigned'
+        };
+      })
+      .sort((a, b) => {
+        const { field, dir } = performanceSort;
+        const valueA = a[field];
+        const valueB = b[field];
+
+        if (valueA === valueB) return 0;
+        const comparison = valueA < valueB ? -1 : 1;
+        return dir === 'asc' ? comparison : -comparison;
+      });
+
+    const topPerformer = [...performanceRows].sort((a, b) => b.outputCount - a.outputCount)[0] ?? null;
+
+    return {
+      employees,
+      performanceRows,
+      topPerformerMachine: topPerformer?.pressName ?? null,
+      summary: {
+        total: employees.length,
+        active: employees.filter((employee) => employee.shiftStatus === 'Active').length,
+        onBreak: employees.filter((employee) => employee.shiftStatus === 'On Break').length,
+        absent: employees.filter((employee) => employee.shiftStatus === 'Absent').length,
+        coverageGaps: coverageGapEmployees.length,
+        expiredCerts: expiredCertEmployees.length
+      },
+      coverageGapEmployees,
+      expiredCertEmployees
+    };
+  }, [payload, performanceSort]);
+
+  useEffect(() => {
+    setOptimizerResult('');
+    setOptimizerLoading(false);
+    setPerformanceSort({ field: 'outputCount', dir: 'desc' });
+  }, [shift]);
 
   const runSupplyScenario = async () => {
     if (!scenarioValue || scenarioLoading) return;
@@ -523,6 +1048,184 @@ function App() {
       setScenarioResult(error.message);
     } finally {
       setScenarioLoading(false);
+    }
+  };
+
+  const handleCreateAnomalyAlert = async (anomaly) => {
+    if (!anomaly) return;
+
+    try {
+      const response = await fetch(`${baseUrl}api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          severity: anomaly.severity === 'Critical' ? 'critical' : 'warning',
+          title: `${anomaly.machine} ${anomaly.metric}`,
+          message: anomaly.description,
+          isActive: true
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      await loadDashboard();
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const handleDismissAnomaly = (anomalyId) => {
+    setAnomalies((current) =>
+      current.map((anomaly) =>
+        anomaly.id === anomalyId
+          ? { ...anomaly, resolved: true, resolvedAt: anomaly.resolvedAt ?? Date.now() }
+          : anomaly
+      )
+    );
+    setSelectedAnomalyId(null);
+  };
+
+  const runOptimizer = async () => {
+    if (optimizerLoading || !payload) return;
+
+    setOptimizerLoading(true);
+    setOptimizerResult('');
+
+    try {
+      const response = await fetch(`${baseUrl}api/ai/shift-optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shiftName: shift,
+          employees: workforceModel.employees,
+          presses: payload.presses ?? [],
+          orders: payload.orders ?? []
+        })
+      });
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          setOptimizerResult('Shift optimizer is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          return;
+        }
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setOptimizerResult('No streaming response was available.');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        setOptimizerResult((previous) => previous + decoder.decode(value, { stream: true }));
+      }
+    } catch (error) {
+      setOptimizerResult(error.message);
+    } finally {
+      setOptimizerLoading(false);
+    }
+  };
+
+  const runQualityAnalysis = async () => {
+    if (qualityAnalysisLoading || !payload) return;
+
+    setQualityAnalysisLoading(true);
+    setQualityAnalysisText('');
+
+    try {
+      const response = await fetch(`${baseUrl}api/ai/quality-analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shiftName: shift,
+          summary: payload.summary,
+          presses: payload.presses ?? [],
+          defects: payload.defects ?? []
+        })
+      });
+
+      if (!response.ok) {
+        if (response.status === 503) {
+          setQualityAnalysisText('Quality analysis is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          return;
+        }
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setQualityAnalysisText('No streaming response was available.');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let finalText = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        finalText += chunk;
+        setQualityAnalysisText(finalText);
+      }
+    } catch (error) {
+      setQualityAnalysisText(error.message);
+    } finally {
+      setQualityAnalysisLoading(false);
+    }
+  };
+
+  const handleRaiseNcr = async () => {
+    if (!payload || !ncrForm.machine || !ncrForm.defectType || !ncrForm.description.trim()) return;
+
+    const nextNcr = {
+      id: `NCR-2024-0${String(ncrs.length + 44).padStart(3, '0')}`,
+      date: Date.now(),
+      machine: ncrForm.machine,
+      defectType: ncrForm.defectType,
+      qtyAffected: Number(ncrForm.qtyAffected) || 1,
+      status: 'Open',
+      assignedTo: 'EMP-1055',
+      capaId: null,
+      description: ncrForm.description.trim(),
+      severity: ncrForm.severity
+    };
+
+    setNcrs((current) => [nextNcr, ...current]);
+    setNcrModalOpen(false);
+
+    try {
+      const response = await fetch(`${baseUrl}api/ncr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shiftName: shift,
+          ...nextNcr
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data?.ncr) {
+        setNcrs((current) => [data.ncr, ...current.filter((item) => item.id !== nextNcr.id)]);
+      }
+      await loadDashboard();
+      setNcrForm((current) => ({
+        ...current,
+        qtyAffected: '1',
+        description: ''
+      }));
+    } catch (error) {
+      setError(error.message);
+      setNcrs((current) => current.filter((item) => item.id !== nextNcr.id));
     }
   };
 
@@ -693,7 +1396,7 @@ function App() {
                   key={order.id}
                   order={order}
                   press={press}
-                  ncrs={payload.ncrs ?? []}
+                  ncrs={ncrs}
                   onClick={() => setSelectedOrder(order)}
                 />
               );
@@ -860,49 +1563,536 @@ function App() {
           </section>
         </>
       ),
-      Workforce: <PlaceholderCard tab="Workforce" />,
-      'Quality & NCR': <PlaceholderCard tab="Quality & NCR" />,
+      Workforce: (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="tab-grid tab-grid-2">
+            <SectionCard title="Shift Coverage" subtitle="Current roster health and machine readiness" badge="Live">
+              <div className="workforce-summary-grid">
+                <article className="workforce-summary-card">
+                  <span>Total Operators</span>
+                  <strong>{workforceModel.summary.total}</strong>
+                </article>
+                <article className="workforce-summary-card">
+                  <span>Active</span>
+                  <strong>{workforceModel.summary.active}</strong>
+                </article>
+                <article className="workforce-summary-card">
+                  <span>Absent</span>
+                  <strong>{workforceModel.summary.absent}</strong>
+                </article>
+                <article className="workforce-summary-card">
+                  <span>Expired Machine Certs</span>
+                  <strong>{workforceModel.summary.expiredCerts}</strong>
+                </article>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Coverage Gaps" subtitle="Absent operators and expired machine certifications" badge="Live">
+              <div className="workforce-alert-stack">
+                {workforceModel.coverageGapEmployees.map((employee) => {
+                  const machineCert = employee.certifications.find((cert) =>
+                    cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase())
+                  );
+
+                  return (
+                    <article key={employee.id} className="alert-card tone-warning workforce-alert-card">
+                      <div className="alert-head">
+                        <strong>{employee.name}</strong>
+                        <span>{employee.id}</span>
+                      </div>
+                      <p>
+                        Coverage gap on {employee.assignedMachine}. {employee.role} is marked {employee.shiftStatus.toLowerCase()}.
+                      </p>
+                      {machineCert ? (
+                        <p className="workforce-alert-detail">
+                          {machineCert.name} is {machineCert.status.toLowerCase()}.
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+
+                {workforceModel.expiredCertEmployees.map((employee) => {
+                  const machineCert = employee.certifications.find((cert) =>
+                    cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase())
+                  );
+
+                  return (
+                    <article key={`${employee.id}-cert`} className="alert-card tone-danger workforce-alert-card">
+                      <div className="alert-head">
+                        <strong>{employee.name}</strong>
+                        <span>{employee.id}</span>
+                      </div>
+                      <p>
+                        Expired machine certification for {employee.assignedMachine} on {machineCert?.name ?? 'assigned machine certification'}.
+                      </p>
+                    </article>
+                  );
+                })}
+
+                {!workforceModel.coverageGapEmployees.length && !workforceModel.expiredCertEmployees.length ? (
+                  <div className="note-row">
+                    <strong>No coverage gaps</strong>
+                    <span>All machine assignments are covered and current.</span>
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
+          </section>
+
+          <SectionCard title="Shift Roster" subtitle="Employees, assignments, and current readiness" badge="Live">
+            <div className="roster-grid">
+              {workforceModel.employees.map((employee) => {
+                const tone = employeeStatusTone(employee.shiftStatus);
+                const machineCert = employee.certifications.find((cert) =>
+                  cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase())
+                );
+                const hasCoverageGap = employee.shiftStatus === 'Absent';
+                const certExpired = machineCert?.status === 'Expired';
+
+                return (
+                  <article key={employee.id} className="roster-card">
+                    <div className="roster-header">
+                      <div>
+                        <span className="roster-name">{employee.name}</span>
+                        <span className="muted">{employee.id}</span>
+                      </div>
+                      <span className={`badge tone-${tone}`}>{employee.shiftStatus}</span>
+                    </div>
+                    <div className="roster-role">
+                      {employee.role} · {employee.assignedMachine}
+                    </div>
+                    {hasCoverageGap ? (
+                      <div className="roster-flag tone-warning">Coverage gap on {employee.assignedMachine}</div>
+                    ) : null}
+                    {certExpired ? (
+                      <div className="roster-flag tone-danger">Cert expired for {employee.assignedMachine}</div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </SectionCard>
+
+          <section className="tab-grid tab-grid-2 workforce-bottom-grid">
+            <SectionCard title="Operator Performance" subtitle="Machine output mapped to active employees" badge="Live">
+              <div className="table-scroll">
+                <table className="workforce-table">
+                  <thead>
+                    <tr>
+                      <th>Machine</th>
+                      <th>Operator</th>
+                      <th>
+                        <button
+                          type="button"
+                          className="sortable-head"
+                          onClick={() =>
+                            setPerformanceSort((current) => ({
+                              field: 'outputCount',
+                              dir: current.field === 'outputCount' && current.dir === 'desc' ? 'asc' : 'desc'
+                            }))
+                          }
+                        >
+                          Output
+                          {performanceSort.field === 'outputCount' ? ` ${performanceSort.dir === 'asc' ? '^' : 'v'}` : null}
+                        </button>
+                      </th>
+                      <th>
+                        <button
+                          type="button"
+                          className="sortable-head"
+                          onClick={() =>
+                            setPerformanceSort((current) => ({
+                              field: 'oee',
+                              dir: current.field === 'oee' && current.dir === 'desc' ? 'asc' : 'desc'
+                            }))
+                          }
+                        >
+                          OEE
+                          {performanceSort.field === 'oee' ? ` ${performanceSort.dir === 'asc' ? '^' : 'v'}` : null}
+                        </button>
+                      </th>
+                      <th>Downtime</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workforceModel.performanceRows.map((row) => (
+                      <tr key={row.pressName} className={row.pressName === workforceModel.topPerformerMachine ? 'top-performer' : ''}>
+                        <td>{row.pressName}</td>
+                        <td>
+                          <strong>{row.employeeName}</strong>
+                          <div className="muted">{row.employeeId ?? 'No active operator'}</div>
+                        </td>
+                        <td>{formatShortNumber(row.outputCount)}</td>
+                        <td>{row.oee.toFixed(0)}%</td>
+                        <td>{row.downtimeMinutes}m</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="AI Shift Optimizer" subtitle="Coverage gaps and reassignment recommendations" badge="Live">
+              <div className="optimizer-panel">
+                <p className="workforce-note">
+                  Analyze the current roster against machine status and ask for a targeted coverage recommendation.
+                </p>
+                <button type="button" className="btn-primary" onClick={runOptimizer} disabled={optimizerLoading}>
+                  {optimizerLoading ? 'Analyzing...' : 'Run AI Optimizer'}
+                </button>
+                <div className="optimizer-result-card">
+                  {optimizerLoading ? (
+                    <span>Streaming recommendation...</span>
+                  ) : optimizerResult ? (
+                    <p>{optimizerResult}</p>
+                  ) : (
+                    <span>The optimizer will explain coverage gaps, reassignments, and the machines that can sustain output.</span>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+          </section>
+        </>
+      ),
+      'Quality & NCR': (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="tab-grid tab-grid-2">
+            <SectionCard title="Quality Snapshot" subtitle="Yield, scrap, and inspection performance this shift" badge="Live">
+              <div className="quality-grid">
+                {qualityModel.metrics.map((metric) => (
+                  <article key={metric.title} className="quality-item">
+                    <span>{metric.title}</span>
+                    <strong>{metric.value}</strong>
+                    <small>{metric.note}</small>
+                  </article>
+                ))}
+              </div>
+              <div className="quality-summary-line">
+                <div>
+                  <strong>Highest risk machine</strong>
+                  <span>{qualityModel.topRiskMachine ? `${qualityModel.topRiskMachine.pressName} at ${qualityModel.topRiskMachine.oee.toFixed(1)}% OEE` : 'No machine data available'}</span>
+                </div>
+                <div>
+                  <strong>Open NCRs</strong>
+                  <span>{qualityModel.openNcrCount}</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="AI Quality Analysis" subtitle="Summarize the highest risk machine and current defect trend" badge="Live">
+              <div className="analysis-actions">
+                <button type="button" className="btn-primary" onClick={runQualityAnalysis} disabled={qualityAnalysisLoading}>
+                  {qualityAnalysisLoading ? 'Analyzing...' : 'Run Quality Analysis'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setNcrModalOpen(true)}>
+                  Raise NCR
+                </button>
+              </div>
+              <div className="analysis-result-card">
+                {qualityAnalysisLoading ? (
+                  <span>Streaming quality analysis...</span>
+                ) : qualityAnalysisText ? (
+                  <p>{qualityAnalysisText}</p>
+                ) : (
+                  <span>The analyst will call out the riskiest machine, the trending defect, and a practical next step.</span>
+                )}
+              </div>
+            </SectionCard>
+          </section>
+
+          <section className="tab-grid tab-grid-2">
+            <SectionCard title="Defect Themes" subtitle="Current defect counts and movement versus the previous shift" badge="Live">
+              <div className="defect-list">
+                {qualityModel.defectRows.map((defect) => (
+                  <article key={defect.type} className="defect-row">
+                    <div>
+                      <strong>{defect.type}</strong>
+                      <span>
+                        {defect.count} this shift, {defect.previousCount} prior shift
+                      </span>
+                    </div>
+                    <div className="defect-trend">
+                      <span className={`trend-pill tone-${defect.tone}`}>
+                        {defect.delta > 0 ? `+${defect.delta}` : defect.delta < 0 ? `${defect.delta}` : '0'}
+                      </span>
+                      <span className={`trend-arrow tone-${defect.tone}`}>
+                        {defect.delta > 0 ? 'Up' : defect.delta < 0 ? 'Down' : 'Flat'}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="NCR Register" subtitle="Current nonconformance records for the active shift" badge="Live">
+              <div className="ncr-toolbar">
+                <button type="button" className="btn-secondary" onClick={() => setNcrModalOpen(true)}>
+                  Raise NCR
+                </button>
+                <span className="ncr-toolbar-copy">{qualityModel.openNcrCount} open record(s)</span>
+              </div>
+              <div className="ncr-table-wrap">
+                <table className="ncr-table">
+                  <thead>
+                    <tr>
+                      <th>NCR #</th>
+                      <th>Date</th>
+                      <th>Machine</th>
+                      <th>Defect Type</th>
+                      <th>Qty Affected</th>
+                      <th>Status</th>
+                      <th>Assigned To</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ncrs.map((ncr) => (
+                      <tr key={ncr.id} className={`ncr-row tone-${ncrStatusTone(ncr.status)}`}>
+                        <td>{ncr.id}</td>
+                        <td>{formatRelativeDate(ncr.date)}</td>
+                        <td>{ncr.machine}</td>
+                        <td>{ncr.defectType}</td>
+                        <td>{ncr.qtyAffected}</td>
+                        <td>
+                          <span className={`badge tone-${ncrStatusTone(ncr.status)}`}>{ncr.status}</span>
+                        </td>
+                        <td>{ncr.assignedTo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          </section>
+        </>
+      ),
       Calibration: <PlaceholderCard tab="Calibration" />,
       Certifications: <PlaceholderCard tab="Certifications" />,
       Suppliers: <PlaceholderCard tab="Suppliers" />,
       CAPA: <PlaceholderCard tab="CAPA" />,
-      'Anomaly Detector': <PlaceholderCard tab="Anomaly Detector" />,
+      'Anomaly Detector': (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="tab-grid tab-grid-2">
+            <SectionCard title="Detection Summary" subtitle="Rules are watching current machine behavior" badge="Live">
+              <div className="quality-grid anomaly-summary-grid">
+                <article className="quality-item">
+                  <span>Active</span>
+                  <strong>{activeAnomalies.length}</strong>
+                </article>
+                <article className="quality-item">
+                  <span>Critical</span>
+                  <strong>{activeAnomalies.filter((item) => item.severity === 'Critical').length}</strong>
+                </article>
+                <article className="quality-item">
+                  <span>Warnings</span>
+                  <strong>{activeAnomalies.filter((item) => item.severity === 'Warning').length}</strong>
+                </article>
+                <article className="quality-item">
+                  <span>Resolved</span>
+                  <strong>{anomalies.filter((item) => item.resolved).length}</strong>
+                </article>
+              </div>
+              <p className="workforce-note">
+                Detection fires on down states, OEE drops, status changes, and sustained low OEE below the current thresholds.
+              </p>
+            </SectionCard>
+
+            <SectionCard title="Selected Anomaly" subtitle="Open a machine to inspect details and get AI diagnosis" badge="Live">
+              {selectedAnomaly ? (
+                <div className="selected-anomaly-card">
+                  <div className="selected-anomaly-head">
+                    <div>
+                      <strong>{selectedAnomaly.machine}</strong>
+                      <span>{selectedAnomaly.metric}</span>
+                    </div>
+                    <span className={`badge tone-${anomalyTone(selectedAnomaly.severity)}`}>
+                      {selectedAnomaly.severity}
+                    </span>
+                  </div>
+                  <p>{selectedAnomaly.description}</p>
+                  <div className="selected-anomaly-meta">
+                    <span>OEE {selectedAnomaly.currentOee?.toFixed(1)}%</span>
+                    <span>{selectedAnomaly.status}</span>
+                    <span>{formatRelativeMinutes(selectedAnomaly.detectedAt)}</span>
+                  </div>
+                  <button type="button" className="btn-primary" onClick={() => setSelectedAnomalyId(selectedAnomaly.id)}>
+                    Open Detail Panel
+                  </button>
+                </div>
+              ) : (
+                <div className="note-row">
+                  <strong>No active anomaly selected</strong>
+                  <span>Click a machine below to open the detail panel.</span>
+                </div>
+              )}
+            </SectionCard>
+          </section>
+
+          <SectionCard title="Active Anomalies" subtitle="Current anomaly queue across the machine fleet" badge="Live">
+            <div className="anomaly-list">
+              {activeAnomalies.length > 0 ? (
+                activeAnomalies.map((anomaly) => (
+                  <button
+                    key={anomaly.id}
+                    type="button"
+                    className={`anomaly-card ${selectedAnomaly?.id === anomaly.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedAnomalyId(anomaly.id)}
+                  >
+                    <div className="anomaly-card-top">
+                      <div>
+                        <strong>{anomaly.machine}</strong>
+                        <span>{anomaly.metric}</span>
+                      </div>
+                      <span className={`badge tone-${anomalyTone(anomaly.severity)}`}>{anomaly.severity}</span>
+                    </div>
+                    <p>{anomaly.description}</p>
+                    <div className="anomaly-card-foot">
+                      <span>{anomaly.currentOee?.toFixed(1)}% OEE</span>
+                      <span>{formatRelativeMinutes(anomaly.detectedAt)}</span>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="note-row">
+                  <strong>No active anomalies</strong>
+                  <span>Monitoring continues on each live tick.</span>
+                </div>
+              )}
+            </div>
+          </SectionCard>
+
+          {anomalies.some((item) => item.resolved) ? (
+            <SectionCard title="Resolved Anomalies" subtitle="Fading items are removed after a short delay" badge="Live">
+              <div className="anomaly-list resolved-list">
+                {anomalies
+                  .filter((item) => item.resolved)
+                  .slice(0, 4)
+                  .map((anomaly) => (
+                    <div key={`${anomaly.id}-resolved`} className="anomaly-card resolved">
+                      <div className="anomaly-card-top">
+                        <div>
+                          <strong>{anomaly.machine}</strong>
+                          <span>{anomaly.metric}</span>
+                        </div>
+                        <span className="badge tone-muted">Resolved</span>
+                      </div>
+                      <p>{anomaly.description}</p>
+                    </div>
+                  ))}
+              </div>
+            </SectionCard>
+          ) : null}
+        </>
+      ),
       Reports: (
         <>
           <div className="tab-live-row">
             <span className="live-chip"><span className="live-dot" />Live</span>
           </div>
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Daily Reports" subtitle="Ready-to-share operational packs" badge="Live">
-              <div className="note-list">
-                <div className="note-row">
-                  <strong>Shift handoff summary</strong>
-                  <span>Preview available for export</span>
+            <SectionCard title="Daily Reports" subtitle="Generate and share the current shift handover" badge="Live">
+              <div className="report-actions">
+                <button type="button" className="btn-primary" onClick={runShiftReport} disabled={reportLoading}>
+                  {reportLoading ? 'Generating...' : 'Generate Shift Report'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={handleCopyReport} disabled={!reportText.trim()}>
+                  Copy to Clipboard
+                </button>
+              </div>
+
+              <div className="report-card-shell">
+                {reportLoading ? (
+                  <div className="loading-state">Streaming shift report...</div>
+                ) : reportText ? (
+                  <ReportCard text={reportText} activeShift={shift} />
+                ) : (
+                  <div className="placeholder-card report-placeholder">
+                    <h2>Shift Handover Report</h2>
+                    <p>Generate a formal summary with performance, issues, handover notes, and recommendations.</p>
+                    <span className="badge tone-muted">Not Generated</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="report-history">
+                <div className="section-card-header compact-header">
+                  <div>
+                    <h3>Report History</h3>
+                    <p>Last five generated reports for quick review.</p>
+                  </div>
                 </div>
-                <div className="note-row">
-                  <strong>Downtime breakdown</strong>
-                  <span>Download ready for review</span>
-                </div>
-                <div className="note-row">
-                  <strong>Quality snapshot</strong>
-                  <span>Summary prepared for leadership</span>
-                </div>
+                {reportHistory.length > 0 ? (
+                  <div className="report-history-list">
+                    {reportHistory.map((entry) => (
+                      <div key={entry.id} className="report-history-row">
+                        <div>
+                          <strong>{entry.shiftName}</strong>
+                          <span>{new Date(entry.generatedAt).toLocaleString()}</span>
+                        </div>
+                        <button type="button" className="btn-secondary" onClick={() => handleViewReport(entry)}>
+                          View
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="note-row">
+                    <strong>No reports yet</strong>
+                    <span>Generate a shift report to populate history.</span>
+                  </div>
+                )}
               </div>
             </SectionCard>
             <SectionCard title="Audit Trail" subtitle="Example report history" badge="Live">
               <div className="note-list">
-                <div className="note-row">
-                  <strong>09:00 AM</strong>
-                  <span>Shift report generated</span>
-                </div>
-                <div className="note-row">
-                  <strong>09:15 AM</strong>
-                  <span>Supervisor acknowledgement received</span>
-                </div>
-                <div className="note-row">
-                  <strong>09:30 AM</strong>
-                  <span>Maintenance note appended</span>
-                </div>
+                {parsedReportSections.length > 0 ? (
+                  parsedReportSections.map((section) => (
+                    <div key={section.header} className="report-audit-row">
+                      <strong>{section.header}</strong>
+                      <span>{section.body.slice(0, 96) || 'Generated report section'}</span>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    <div className="note-row">
+                      <strong>Performance Summary</strong>
+                      <span>Generated report section will appear here</span>
+                    </div>
+                    <div className="note-row">
+                      <strong>Issues & Actions</strong>
+                      <span>Generated report section will appear here</span>
+                    </div>
+                    <div className="note-row">
+                      <strong>Handover Notes</strong>
+                      <span>Generated report section will appear here</span>
+                    </div>
+                    <div className="note-row">
+                      <strong>Recommendations</strong>
+                      <span>Generated report section will appear here</span>
+                    </div>
+                  </>
+                )}
               </div>
             </SectionCard>
           </section>
@@ -951,8 +2141,137 @@ function App() {
           <div className="tab-live-row">
             <span className="live-chip"><span className="live-dot" />Live</span>
           </div>
-          <section className="tab-grid tab-grid-2">
-            <SectionCard title="Dashboard Preferences" subtitle="Demo configuration controls" badge="Live">
+          <section className="section-card">
+            <div className="section-card-header">
+              <div>
+                <h3>Anomaly Detection Thresholds</h3>
+                <p>Adjust detection sensitivity for live machine monitoring.</p>
+              </div>
+            </div>
+            <div className="threshold-grid">
+              <label className="threshold-field">
+                <span>OEE Warning Drop (%)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={anomalyThresholds.warningOeeDrop}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      warningOeeDrop: Number(event.target.value) || 0
+                    }))
+                  }
+                />
+              </label>
+              <label className="threshold-field">
+                <span>Critical OEE Floor (%)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={anomalyThresholds.criticalOee}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      criticalOee: Number(event.target.value) || 0
+                    }))
+                  }
+                />
+              </label>
+              <label className="threshold-field">
+                <span>Sustained Ticks for Critical</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={anomalyThresholds.sustainedTicks}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      sustainedTicks: Math.max(1, Number(event.target.value) || 1)
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="section-card integrations-panel">
+            <div className="section-card-header">
+              <div>
+                <h3>Connected Systems</h3>
+                <p>Integration coverage across ERP, MES, PLCs, and adjacent business systems.</p>
+              </div>
+            </div>
+
+            <div className="integrations-grid">
+              {integrations.map((integration) => (
+                <article key={integration.name} className="integration-card">
+                  <div className="integration-card-top">
+                    <span className="integration-icon">{integration.icon}</span>
+                    <div>
+                      <h4>{integration.name}</h4>
+                      <p>{integration.platforms}</p>
+                    </div>
+                    <span className={`integration-badge tone-${integrationTone(integration.status)}`}>
+                      {integration.status}
+                    </span>
+                  </div>
+                  <p className="integration-detail">{integration.detail}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="tab-grid tab-grid-3 integrations-layout">
+            <SectionCard title="Last Sync" subtitle="Recent integration activity and freshness" badge="Live">
+              <div className="sync-log">
+                {syncLog.map((entry) => (
+                  <div key={entry.system} className="sync-row">
+                    <div>
+                      <strong>{entry.system}</strong>
+                      <span>{entry.records}</span>
+                    </div>
+                    <div className="sync-meta">
+                      <span>{entry.timestamp}</span>
+                      <span className={`integration-badge tone-${integrationTone(entry.status)}`}>
+                        {entry.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Data Flow" subtitle="Where operational data moves between systems" badge="Live">
+              <div className="data-flow">
+                <div className="flow-col">
+                  <h4>Sources</h4>
+                  <div className="flow-list">
+                    <span className="flow-token">ERP</span>
+                    <span className="flow-token">MES</span>
+                    <span className="flow-token">Machine PLCs</span>
+                  </div>
+                </div>
+                <div className="flow-bridge" aria-hidden="true">
+                  <span className="flow-arrow">→</span>
+                  <span className="flow-line" />
+                  <span className="flow-arrow">→</span>
+                </div>
+                <div className="flow-col">
+                  <h4>Plant Apps</h4>
+                  <div className="flow-list">
+                    <span className="flow-token">Dashboard</span>
+                    <span className="flow-token">Alerts</span>
+                    <span className="flow-token">Reports</span>
+                    <span className="flow-token">AI Assist</span>
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Profile & Preferences" subtitle="Demo configuration controls and account details" badge="Live">
               <div className="settings-list">
                 <label className="settings-row">
                   <span>Auto-refresh dashboard</span>
@@ -967,9 +2286,7 @@ function App() {
                   <strong>Off</strong>
                 </label>
               </div>
-            </SectionCard>
-            <SectionCard title="Operator Profile" subtitle="Sample account information" badge="Live">
-              <div className="note-list">
+              <div className="note-list settings-profile-list">
                 <div className="note-row">
                   <strong>Role</strong>
                   <span>Line Supervisor</span>
@@ -988,7 +2305,30 @@ function App() {
         </>
       )
     };
-  }, [payload, stats, freshnessSeconds, shiftSummaries, criticalDismissed, scenarioLoading, scenarioResult]);
+  }, [
+    payload,
+    stats,
+    freshnessSeconds,
+    shiftSummaries,
+    criticalDismissed,
+    scenarioLoading,
+    scenarioResult,
+    workforceModel,
+    performanceSort,
+    optimizerLoading,
+    optimizerResult,
+    anomalies,
+    activeAnomalies,
+    selectedAnomaly,
+    anomalyThresholds,
+    qualityModel,
+    ncrs,
+    qualityAnalysisText,
+    qualityAnalysisLoading,
+    ncrModalOpen,
+    ncrForm,
+    shift
+  ]);
 
   return (
     <div className="app-shell">
@@ -1092,6 +2432,14 @@ function App() {
       </section>
 
       <PressPanel press={selectedPress} onClose={() => setSelectedPress(null)} />
+      <AnomalyPanel
+        anomaly={selectedAnomaly}
+        press={selectedAnomaly && payload?.presses ? payload.presses.find((item) => item.pressName === selectedAnomaly.machine) ?? null : null}
+        apiBase={baseUrl}
+        onClose={() => setSelectedAnomalyId(null)}
+        onCreateAlert={handleCreateAnomalyAlert}
+        onDismiss={handleDismissAnomaly}
+      />
       <OrderPanel
         order={selectedOrder}
         press={
@@ -1099,9 +2447,111 @@ function App() {
             ? payload?.presses.find((item) => item.pressName === selectedOrder.machineAssigned)
             : null
         }
-        ncrs={payload?.ncrs ?? []}
+        ncrs={ncrs}
         onClose={() => setSelectedOrder(null)}
       />
+      {ncrModalOpen && payload ? (
+        <div className="modal-overlay" onClick={() => setNcrModalOpen(false)}>
+          <div className="scenario-modal quality-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <h2>Raise NCR</h2>
+              <button className="panel-close" type="button" onClick={() => setNcrModalOpen(false)} aria-label="Close modal">
+                x
+              </button>
+            </div>
+
+            <form
+              className="ncr-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleRaiseNcr();
+              }}
+            >
+              <label className="scenario-field">
+                <span>Machine</span>
+                <select value={ncrForm.machine} onChange={(event) => setNcrForm((current) => ({ ...current, machine: event.target.value }))}>
+                  <option value="">Select machine...</option>
+                  {(payload.presses ?? []).map((press) => (
+                    <option key={press.pressName} value={press.pressName}>
+                      {press.pressName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="scenario-field">
+                <span>Defect Type</span>
+                <select value={ncrForm.defectType} onChange={(event) => setNcrForm((current) => ({ ...current, defectType: event.target.value }))}>
+                  <option value="">Select defect type...</option>
+                  {(payload.defects ?? []).map((defect) => (
+                    <option key={defect.type} value={defect.type}>
+                      {defect.type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="scenario-field">
+                <span>Qty Affected</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={ncrForm.qtyAffected}
+                  onChange={(event) => setNcrForm((current) => ({ ...current, qtyAffected: event.target.value }))}
+                />
+              </label>
+
+              <label className="scenario-field">
+                <span>Description</span>
+                <textarea
+                  rows="4"
+                  value={ncrForm.description}
+                  onChange={(event) => setNcrForm((current) => ({ ...current, description: event.target.value }))}
+                />
+              </label>
+
+              <div className="ncr-severity-group">
+                <span className="scenario-field-label">Severity</span>
+                <label>
+                  <input
+                    type="radio"
+                    name="ncrSeverity"
+                    value="Low"
+                    checked={ncrForm.severity === 'Low'}
+                    onChange={(event) => setNcrForm((current) => ({ ...current, severity: event.target.value }))}
+                  />
+                  Low
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="ncrSeverity"
+                    value="Medium"
+                    checked={ncrForm.severity === 'Medium'}
+                    onChange={(event) => setNcrForm((current) => ({ ...current, severity: event.target.value }))}
+                  />
+                  Medium
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="ncrSeverity"
+                    value="High"
+                    checked={ncrForm.severity === 'High'}
+                    onChange={(event) => setNcrForm((current) => ({ ...current, severity: event.target.value }))}
+                  />
+                  High
+                </label>
+              </div>
+
+              <button type="submit" className="btn-primary" disabled={!ncrForm.machine || !ncrForm.defectType || !ncrForm.description.trim()}>
+                Save NCR
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
       <SupplyScenarioModal
         open={scenarioOpen}
         value={scenarioValue}

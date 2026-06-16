@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import {
   createAlert,
+  createNcr,
   getDashboardPayload,
   getShifts,
   listAlerts,
+  listNcrs,
   listPresses,
   resetShift,
   updateDashboardSnapshot,
@@ -239,21 +241,71 @@ app.get('/api/alerts', async (request, response) => {
   response.json({ shiftName: shift, alerts });
 });
 
+app.get('/api/ncr', async (request, response) => {
+  const shift = resolveShiftName(request);
+  const ncrs = await listNcrs(shift);
+  response.json({ shiftName: shift, ncrs });
+});
+
+app.post('/api/ncr', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  const body = request.body || {};
+  const { machine, defectType, qtyAffected, description, severity } = body;
+
+  if (!machine || !defectType || !qtyAffected || !description) {
+    return sendError(response, 400, 'machine, defectType, qtyAffected, and description are required.');
+  }
+
+  const normalizedQty = Number(qtyAffected);
+  if (!Number.isFinite(normalizedQty) || normalizedQty <= 0) {
+    return sendError(response, 400, 'qtyAffected must be a positive number.');
+  }
+
+  const record = {
+    id: body.id || `NCR-2024-${String((await listNcrs(shiftName)).length + 44).padStart(4, '0')}`,
+    date: body.date ?? Date.now(),
+    machine,
+    defectType,
+    qtyAffected: normalizedQty,
+    status: body.status || 'Open',
+    assignedTo: body.assignedTo || 'EMP-1055',
+    capaId: body.capaId ?? null,
+    description,
+    severity: severity || 'Medium'
+  };
+
+  try {
+    const created = await createNcr(shiftName, record);
+    broadcastDashboardUpdate(shiftName);
+    response.status(201).json({ message: 'NCR created successfully.', ncr: created, mode: 'demo' });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
 app.post('/api/ai/quality-analysis', async (request, response) => {
   const shiftName = resolveShiftName(request);
   const contextData = await buildAiContext(shiftName);
+  const summary = request.body?.summary ?? contextData.summary;
+  const presses = request.body?.presses ?? contextData.machines ?? [];
+  const defects = request.body?.defects ?? contextData.defects ?? [];
+  const openNcrs = (contextData.ncrs ?? []).filter((ncr) => ncr.status !== 'Closed');
   const systemPrompt = [
-    'You are a quality engineer analyzing manufacturing performance for the current shift.',
-    'Summarize the main quality issue, likely causes, and next actions.',
-    'Use machine names and defect types from the data.',
-    'Keep the response concise and practical.'
+    'You are a manufacturing quality analyst reviewing a live shift.',
+    'Write a concise narrative that identifies the highest-risk machine by name and OEE, the defect type trending worst, and one practical recommendation.',
+    'Use the live summary, presses, defects, and open NCR context.',
+    'Keep the response to 3-4 sentences and avoid generic filler.'
   ].join(' ');
 
   return streamAiResponse(response, {
     systemPrompt,
-    userMessage: request.body?.prompt || 'Analyze the current shift quality situation.',
+    userMessage: 'Analyze the current shift quality situation.',
     contextData: {
       ...contextData,
+      summary,
+      presses,
+      defects,
+      openNcrs,
       requestedFocus: request.body?.focusArea ?? null
     }
   });
@@ -301,17 +353,30 @@ app.post('/api/ai/shift-optimize', async (request, response) => {
 app.post('/api/ai/anomaly-diagnosis', async (request, response) => {
   const shiftName = resolveShiftName(request);
   const contextData = await buildAiContext(shiftName);
+  const { machine, metric, currentOee, trend } = request.body || {};
+
+  if (!machine || !metric) {
+    return sendError(response, 400, 'machine and metric are required.');
+  }
+
   const systemPrompt = [
-    'You are a manufacturing anomaly analyst.',
-    'Diagnose the anomaly using machine, downtime, NCR, and trend data.',
-    'Identify the most probable causes and what should be checked next.',
-    'Keep the response concise and technical.'
+    'You are a maintenance engineer.',
+    'Given a machine anomaly, explain what the pattern is likely caused by and what to physically inspect.',
+    'Be specific. Answer in 2-3 sentences.'
   ].join(' ');
 
   return streamAiResponse(response, {
     systemPrompt,
-    userMessage: request.body?.anomaly || 'Diagnose the current anomaly.',
-    contextData
+    userMessage: `Machine: ${machine}. Anomaly: ${metric}. Current OEE: ${currentOee ?? 'n/a'}%. Trend: ${(trend ?? []).join(', ')}%.`,
+    contextData: {
+      ...contextData,
+      anomaly: {
+        machine,
+        metric,
+        currentOee,
+        trend: trend ?? []
+      }
+    }
   });
 });
 
@@ -366,16 +431,30 @@ app.post('/api/ai/chat', async (request, response) => {
 
 app.post('/api/ai/shift-report', async (request, response) => {
   const shiftName = resolveShiftName(request);
-  const contextData = await buildAiContext(shiftName);
-  const systemPrompt = [
-    'You are a shift handover analyst generating an operations report.',
-    'Summarize production, quality, downtime, risks, and next-shift priorities.',
-    'Use clear headings and keep it concise but useful for supervisors.'
-  ].join(' ');
+  const dashboard = await getDashboardPayload(shiftName);
+  const openNcrs = (dashboard.ncrs ?? []).filter((ncr) => ncr.status !== 'Closed');
+  const overdueCapas = demoCapas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed');
+  const contextData = {
+    summary: dashboard.summary,
+    machines: dashboard.presses,
+    downtime: dashboard.downtime,
+    orders: dashboard.orders ?? [],
+    openNcrs,
+    overdueCapas,
+    activeAlerts: dashboard.alerts ?? []
+  };
+  const systemPrompt = `You are a manufacturing shift supervisor writing a formal shift handover report.
+Structure your response with exactly these four section headers on their own lines:
+### PERFORMANCE SUMMARY
+### ISSUES & ACTIONS
+### HANDOVER NOTES
+### RECOMMENDATIONS
+Each section: 2-4 sentences. Use real machine names, order numbers, and quantities from the data.
+Do not mention AI, data structures, or JSON.`;
 
   return streamAiResponse(response, {
     systemPrompt,
-    userMessage: request.body?.prompt || 'Write the current shift handover report.',
+    userMessage: `Write a shift handover report for ${shiftName}.`,
     contextData
   });
 });
