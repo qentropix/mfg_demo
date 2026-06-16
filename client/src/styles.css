@@ -813,6 +813,18 @@ button {
   line-height: 1.5;
 }
 
+.integration-request {
+  border: 1px solid rgba(41, 211, 255, 0.18);
+  background: rgba(41, 211, 255, 0.08);
+  color: #dff9ff;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  align-self: start;
+}
+
 .anomaly-summary-grid {
   margin-bottom: 10px;
 }
@@ -1877,6 +1889,110 @@ button {
 
 .ncr-severity-group input {
   accent-color: var(--cyan);
+}
+
+.capa-list {
+  display: grid;
+  gap: 12px;
+}
+
+.capa-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(159, 180, 255, 0.08);
+}
+
+.capa-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.capa-card-top strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.capa-card-top span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.capa-card p {
+  margin: 0;
+  color: #dbe2f7;
+  line-height: 1.5;
+}
+
+.capa-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.capa-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.capa-closed-copy {
+  color: var(--success);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.request-form {
+  display: grid;
+  gap: 12px;
+}
+
+.request-form input,
+.request-form textarea {
+  width: 100%;
+  border: 1px solid rgba(159, 180, 255, 0.12);
+  background: rgba(5, 8, 22, 0.9);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.request-form input[readonly] {
+  color: #dbe2f7;
+  opacity: 0.95;
+}
+
+.toast-notification {
+  position: fixed;
+  right: 24px;
+  bottom: 80px;
+  z-index: 240;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(7, 12, 24, 0.95);
+  border: 1px solid rgba(55, 214, 122, 0.24);
+  color: #eafff1;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .report-row button {

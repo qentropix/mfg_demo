@@ -233,7 +233,7 @@ const demoByShift = {
       { pressName: 'Press 02', status: 'Running', oee: 82, outputCount: 3012, downtimeMinutes: 22, currentJob: 'Side Frame Batch' },
       { pressName: 'Press 03', status: 'Running', oee: 75, outputCount: 2789, downtimeMinutes: 35, currentJob: 'Hinge Mount Kits' },
       { pressName: 'Press 04', status: 'Minor Stop', oee: 60, outputCount: 2105, downtimeMinutes: 62, currentJob: 'Reinforcement Brackets' },
-      { pressName: 'Press 05', status: 'Running', oee: 79, outputCount: 2934, downtimeMinutes: 14, currentJob: 'Tool Change Queue' },
+      { pressName: 'Press 05', status: 'Down', oee: 0, outputCount: 0, downtimeMinutes: 14, currentJob: 'Tool Change Queue' },
       { pressName: 'Press 06', status: 'Running', oee: 88, outputCount: 3890, downtimeMinutes: 12, currentJob: 'Latch Assembly' }
     ],
     downtime: [

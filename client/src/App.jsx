@@ -382,6 +382,7 @@ function App() {
   const [anomalies, setAnomalies] = useState([]);
   const [selectedAnomalyId, setSelectedAnomalyId] = useState(null);
   const [ncrs, setNcrs] = useState([]);
+  const [capas, setCapas] = useState([]);
   const [qualityAnalysisText, setQualityAnalysisText] = useState('');
   const [qualityAnalysisLoading, setQualityAnalysisLoading] = useState(false);
   const [ncrModalOpen, setNcrModalOpen] = useState(false);
@@ -392,6 +393,10 @@ function App() {
     description: '',
     severity: 'Medium'
   });
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestSystem, setRequestSystem] = useState('');
+  const [requestText, setRequestText] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
   const [anomalyThresholds, setAnomalyThresholds] = useState({
     warningOeeDrop: 8,
     criticalOee: 65,
@@ -502,7 +507,14 @@ function App() {
     setQualityAnalysisText('');
     setQualityAnalysisLoading(false);
     setNcrModalOpen(false);
+    setRequestModalOpen(false);
   }, [shift]);
+
+  useEffect(() => {
+    if (!toastMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setToastMessage(''), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toastMessage]);
 
   useEffect(() => {
     const eventSource = new EventSource(
@@ -566,6 +578,7 @@ function App() {
 
   useEffect(() => {
     setNcrs(payload?.ncrs ?? []);
+    setCapas(payload?.capas ?? []);
 
     if (!payload) return;
 
@@ -901,7 +914,6 @@ function App() {
   }, [ncrs, payload]);
 
   const badgeCounts = useMemo(() => {
-    const capas = payload?.capas ?? [];
     const calibrations = payload?.calibrations ?? [];
     const employees = payload?.employees ?? [];
     const alerts = payload?.alerts ?? [];
@@ -915,7 +927,7 @@ function App() {
       ).length,
       Alerts: alerts.length
     };
-  }, [payload, ncrs]);
+  }, [payload, ncrs, capas]);
 
   const syncLog = useMemo(
     () => [
@@ -1227,6 +1239,37 @@ function App() {
       setError(error.message);
       setNcrs((current) => current.filter((item) => item.id !== nextNcr.id));
     }
+  };
+
+  const handleCloseCapa = (capaId) => {
+    const closedAt = Date.now();
+    const target = capas.find((capa) => capa.id === capaId);
+    if (!target) return;
+
+    setCapas((current) =>
+      current.map((capa) =>
+        capa.id === capaId
+          ? {
+              ...capa,
+              status: 'Closed',
+              percentComplete: 100,
+              stageHistory: [...(capa.stageHistory ?? []), { stage: 'Closed', timestamp: closedAt }]
+            }
+          : capa
+      )
+    );
+
+    if (target.ncrId) {
+      setNcrs((current) => current.map((ncr) => (ncr.id === target.ncrId ? { ...ncr, status: 'Closed' } : ncr)));
+    }
+  };
+
+  const handleRequestIntegration = () => {
+    if (!requestSystem.trim() || !requestText.trim()) return;
+    setRequestModalOpen(false);
+    setToastMessage('Thanks - we\'ll follow up within 24 hours');
+    setRequestSystem('');
+    setRequestText('');
   };
 
   useEffect(() => {
@@ -1883,7 +1926,51 @@ function App() {
       Calibration: <PlaceholderCard tab="Calibration" />,
       Certifications: <PlaceholderCard tab="Certifications" />,
       Suppliers: <PlaceholderCard tab="Suppliers" />,
-      CAPA: <PlaceholderCard tab="CAPA" />,
+      CAPA: (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <SectionCard title="CAPA Register" subtitle="Open and closed corrective actions linked to NCRs" badge="Live">
+            <div className="capa-list">
+              {[...capas]
+                .sort((a, b) => {
+                  if (a.status === b.status) return b.openedDate - a.openedDate;
+                  return a.status === 'Closed' ? 1 : -1;
+                })
+                .map((capa) => {
+                  const tone = capa.status === 'Closed' ? 'success' : capa.status === 'Overdue' ? 'danger' : 'warning';
+                  return (
+                    <article key={capa.id} className="capa-card">
+                      <div className="capa-card-top">
+                        <div>
+                          <strong>{capa.id}</strong>
+                          <span>{capa.machine} · {capa.defectType}</span>
+                        </div>
+                        <span className={`badge tone-${tone}`}>{capa.status}</span>
+                      </div>
+                      <p>{capa.issueDescription}</p>
+                      <div className="capa-meta">
+                        <span>Linked NCR: {capa.ncrId}</span>
+                        <span>{capa.percentComplete}% complete</span>
+                      </div>
+                      <div className="capa-actions">
+                        <button type="button" className="btn-secondary" onClick={() => handleCloseCapa(capa.id)} disabled={capa.status === 'Closed'}>
+                          Close CAPA
+                        </button>
+                        {capa.status === 'Closed' ? <span className="capa-closed-copy">Linked NCR closed</span> : null}
+                      </div>
+                    </article>
+                  );
+                })}
+            </div>
+          </SectionCard>
+        </>
+      ),
       'Anomaly Detector': (
         <>
           <div className="tab-live-row">
@@ -2219,6 +2306,19 @@ function App() {
                     </span>
                   </div>
                   <p className="integration-detail">{integration.detail}</p>
+                  {integration.status === 'Available' ? (
+                    <button
+                      type="button"
+                      className="integration-request"
+                      onClick={() => {
+                        setRequestSystem(integration.name);
+                        setRequestText('');
+                        setRequestModalOpen(true);
+                      }}
+                    >
+                      Request Integration
+                    </button>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -2302,6 +2402,43 @@ function App() {
               </div>
             </SectionCard>
           </section>
+
+          {requestModalOpen ? (
+            <div className="modal-overlay" onClick={() => setRequestModalOpen(false)}>
+              <div className="scenario-modal request-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="panel-header">
+                  <h2>Request Integration</h2>
+                  <button className="panel-close" type="button" onClick={() => setRequestModalOpen(false)} aria-label="Close modal">
+                    x
+                  </button>
+                </div>
+
+                <form
+                  className="request-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    handleRequestIntegration();
+                  }}
+                >
+                  <label className="scenario-field">
+                    <span>System</span>
+                    <input type="text" value={requestSystem} readOnly />
+                  </label>
+                  <label className="scenario-field">
+                    <span>Tell us about your {requestSystem || 'system'} environment</span>
+                    <textarea
+                      rows="4"
+                      value={requestText}
+                      onChange={(event) => setRequestText(event.target.value)}
+                    />
+                  </label>
+                  <button type="submit" className="btn-primary" disabled={!requestSystem.trim() || !requestText.trim()}>
+                    Submit Request
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : null}
         </>
       )
     };
@@ -2325,6 +2462,9 @@ function App() {
     ncrs,
     qualityAnalysisText,
     qualityAnalysisLoading,
+    requestModalOpen,
+    requestSystem,
+    requestText,
     ncrModalOpen,
     ncrForm,
     shift
@@ -2450,6 +2590,7 @@ function App() {
         ncrs={ncrs}
         onClose={() => setSelectedOrder(null)}
       />
+      {toastMessage ? <div className="toast-notification">{toastMessage}</div> : null}
       {ncrModalOpen && payload ? (
         <div className="modal-overlay" onClick={() => setNcrModalOpen(false)}>
           <div className="scenario-modal quality-modal" onClick={(event) => event.stopPropagation()}>
