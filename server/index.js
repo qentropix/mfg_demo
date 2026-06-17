@@ -387,18 +387,39 @@ app.post('/api/ai/supply-scenario', async (request, response) => {
 
 app.post('/api/ai/shift-optimize', async (request, response) => {
   const shiftName = resolveShiftName(request);
-  const contextData = await buildAiContext(shiftName);
+  const dashboard = await getDashboardPayload(shiftName);
+  const employees = request.body?.employees ?? dashboard.employees ?? [];
+  const presses = request.body?.presses ?? dashboard.presses ?? [];
+  const orders = request.body?.orders ?? dashboard.orders ?? [];
+  const openNcrs = (dashboard.ncrs ?? []).filter((ncr) => ncr.status !== 'Closed');
+  const activeAlerts = dashboard.alerts ?? [];
+
+  if (!presses.length || !employees.length) {
+    return sendError(response, 400, 'presses and employees are required.');
+  }
+
   const systemPrompt = [
     'You are an operations optimization expert for a manufacturing shift.',
     'Recommend how to improve throughput, reduce downtime, and balance machine load.',
-    'Mention the most important machine and job priorities.',
-    'Keep the response concise and actionable.'
+    'Name specific operators and machines from the data.',
+    'Explain why any recommended donor machine can sustain output without that operator.',
+    'Keep the response to 3-4 concise, actionable sentences.'
   ].join(' ');
 
   return streamAiResponse(response, {
     systemPrompt,
-    userMessage: request.body?.prompt || 'Optimize the current shift.',
-    contextData
+    userMessage:
+      request.body?.prompt ||
+      'Analyze the current shift roster and recommend specific reassignment changes to improve coverage and sustain output.',
+    contextData: {
+      shift: shiftName,
+      summary: dashboard.summary,
+      employees,
+      presses,
+      orders,
+      openNcrs,
+      activeAlerts
+    }
   });
 });
 

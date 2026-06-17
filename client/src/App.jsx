@@ -437,6 +437,7 @@ function App() {
   const [reportHistory, setReportHistory] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const [selectedAnomalyId, setSelectedAnomalyId] = useState(null);
+  const anomalyDefaultSelectedRef = useRef(false);
   const [employees, setEmployees] = useState([]);
   const [employeesSeedShift, setEmployeesSeedShift] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
@@ -542,8 +543,7 @@ function App() {
     () => anomalies.filter((anomaly) => !anomaly.resolved),
     [anomalies]
   );
-  const selectedAnomaly =
-    anomalies.find((anomaly) => anomaly.id === selectedAnomalyId) ?? activeAnomalies[0] ?? null;
+  const selectedAnomaly = anomalies.find((anomaly) => anomaly.id === selectedAnomalyId) ?? null;
   const parsedReportSections = useMemo(() => parseShiftReport(reportText), [reportText]);
 
   const loadDashboard = async (signal) => {
@@ -591,6 +591,7 @@ function App() {
     setSelectedCapaId(null);
     setHighlightedNcr('');
     setSelectedSupplierId(null);
+    anomalyDefaultSelectedRef.current = false;
   }, [shift]);
 
   const handleAssistantMessage = async (text) => {
@@ -709,8 +710,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!selectedAnomalyId && activeAnomalies.length > 0) {
+    if (!anomalyDefaultSelectedRef.current && !selectedAnomalyId && activeAnomalies.length > 0) {
       setSelectedAnomalyId(activeAnomalies[0].id);
+      anomalyDefaultSelectedRef.current = true;
     }
   }, [activeAnomalies, selectedAnomalyId]);
 
@@ -1423,6 +1425,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shiftName: shift,
+          prompt: 'Analyze the current shift roster and recommend specific reassignment changes to improve coverage and sustain output.',
           employees: workforceModel.employees,
           presses: payload.presses ?? [],
           orders: payload.orders ?? []
