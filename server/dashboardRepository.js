@@ -1,6 +1,6 @@
 import { pool } from './db.js';
 import {
-  capas,
+  capas as demoCapas,
   calibrations,
   employees,
   getBaseDemoDashboard,
@@ -9,7 +9,8 @@ import {
   suppliers
 } from './demoData.js';
 
-const extraNcrsByShift = new Map();
+const ncrStoreByShift = new Map();
+let capaStore = demoCapas.map((capa) => cloneCapa(capa));
 
 function toNumber(value) {
   return Number.parseFloat(value);
@@ -19,10 +20,32 @@ function cloneNcr(ncr) {
   return { ...ncr };
 }
 
+function cloneCapa(capa) {
+  return {
+    ...capa,
+    actions: (capa.actions ?? []).map((action) => ({ ...action })),
+    stageHistory: (capa.stageHistory ?? []).map((entry) => ({ ...entry }))
+  };
+}
+
 function getMergedNcrs(shiftName) {
-  const demo = getDemoDashboard(shiftName);
-  const extras = extraNcrsByShift.get(shiftName) ?? [];
-  return [...demo.ncrs.map(cloneNcr), ...extras.map(cloneNcr)].sort((a, b) => b.date - a.date);
+  if (!ncrStoreByShift.has(shiftName)) {
+    const demo = getDemoDashboard(shiftName);
+    ncrStoreByShift.set(shiftName, demo.ncrs.map(cloneNcr));
+  }
+
+  return (ncrStoreByShift.get(shiftName) ?? []).map(cloneNcr).sort((a, b) => b.date - a.date);
+}
+
+function setMergedNcrs(shiftName, ncrs) {
+  ncrStoreByShift.set(
+    shiftName,
+    ncrs.map((ncr) => cloneNcr(ncr))
+  );
+}
+
+function getMergedCapas() {
+  return capaStore.map(cloneCapa);
 }
 
 function mapPressRow(row) {
@@ -105,7 +128,7 @@ function getShiftFallback(shiftName) {
     ncrs: getMergedNcrs(shiftName),
     suppliers,
     employees,
-    capas,
+    capas: getMergedCapas(),
     calibrations
   };
 }
@@ -220,7 +243,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
       ncrs: getMergedNcrs(shiftName),
       suppliers,
       employees,
-      capas,
+      capas: getMergedCapas(),
       calibrations
     };
   } catch (error) {
@@ -238,9 +261,9 @@ export async function createNcr(shiftName, ncr) {
     ...ncr,
     shiftName
   });
-  const current = extraNcrsByShift.get(shiftName) ?? [];
+  const current = getMergedNcrs(shiftName);
   current.unshift(record);
-  extraNcrsByShift.set(shiftName, current);
+  setMergedNcrs(shiftName, current);
   return record;
 }
 
@@ -467,8 +490,10 @@ export async function resetShift(shiftName = null) {
   const shifts = shiftName ? [shiftName] : ['Shift A', 'Shift B'];
 
   for (const shift of shifts) {
-    extraNcrsByShift.delete(shift);
+    ncrStoreByShift.delete(shift);
   }
+
+  capaStore = demoCapas.map((capa) => cloneCapa(capa));
 
   if (!pool) {
     return { reset: shifts, mode: 'demo' };
@@ -529,4 +554,50 @@ export async function resetShift(shiftName = null) {
   }
 
   return { reset: shifts, mode: 'db' };
+}
+
+export async function listCapas() {
+  return getMergedCapas();
+}
+
+export async function createCapa(capa) {
+  const record = cloneCapa({
+    ...capa,
+    openedDate: capa.openedDate ?? Date.now(),
+    stageHistory: capa.stageHistory ?? [{ stage: 'Open', timestamp: capa.openedDate ?? Date.now() }]
+  });
+
+  capaStore = [record, ...capaStore];
+  return cloneCapa(record);
+}
+
+export async function updateCapa(capaId, updates) {
+  const index = capaStore.findIndex((capa) => capa.id === capaId);
+  if (index === -1) return null;
+
+  const current = capaStore[index];
+  const next = cloneCapa({
+    ...current,
+    ...updates,
+    actions: updates.actions ? updates.actions.map((action) => ({ ...action })) : current.actions,
+    stageHistory: updates.stageHistory ? updates.stageHistory.map((entry) => ({ ...entry })) : current.stageHistory
+  });
+
+  capaStore = capaStore.map((capa, itemIndex) => (itemIndex === index ? next : capa));
+  return cloneCapa(next);
+}
+
+export async function updateNcr(shiftName, ncrId, updates) {
+  const current = getMergedNcrs(shiftName);
+  const index = current.findIndex((ncr) => ncr.id === ncrId);
+  if (index === -1) return null;
+
+  const next = cloneNcr({
+    ...current[index],
+    ...updates
+  });
+
+  current[index] = next;
+  setMergedNcrs(shiftName, current);
+  return cloneNcr(next);
 }

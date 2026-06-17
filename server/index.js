@@ -6,18 +6,22 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import {
   createAlert,
+  createCapa,
   createNcr,
   getDashboardPayload,
   getShifts,
   listAlerts,
+  listCapas,
   listNcrs,
   listPresses,
   resetShift,
+  updateNcr,
+  updateCapa,
   updateDashboardSnapshot,
   updatePress
 } from './dashboardRepository.js';
 import { streamCompletion } from './aiService.js';
-import { capas as demoCapas, calibrations, employees, suppliers } from './demoData.js';
+import { calibrations, employees, suppliers } from './demoData.js';
 import { broadcastDashboardUpdate, subscribeDashboardUpdates } from './realtime.js';
 
 dotenv.config();
@@ -46,7 +50,8 @@ function sendError(response, statusCode, message) {
 async function buildAiContext(shiftName) {
   const dashboard = await getDashboardPayload(shiftName);
   const openNcrs = (dashboard.ncrs ?? []).filter((ncr) => ncr.status !== 'Closed');
-  const overdueCapas = demoCapas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed');
+  const allCapas = await listCapas();
+  const overdueCapas = allCapas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed');
 
   return {
     dashboard,
@@ -62,7 +67,7 @@ async function buildAiContext(shiftName) {
     openNcrs,
     suppliers,
     employees,
-    capas: demoCapas,
+    capas: allCapas,
     overdueCapas,
     calibrations,
     alerts: dashboard.alerts ?? []
@@ -283,6 +288,53 @@ app.post('/api/ncr', async (request, response) => {
   }
 });
 
+app.get('/api/capa', async (_request, response) => {
+  const capas = await listCapas();
+  response.json({ capas });
+});
+
+app.post('/api/capa', async (request, response) => {
+  const body = request.body || {};
+
+  if (!body.id || !body.ncrId || !body.machine || !body.defectType || !body.issueDescription) {
+    return sendError(response, 400, 'id, ncrId, machine, defectType, and issueDescription are required.');
+  }
+
+  try {
+    const capa = await createCapa({
+      ...body,
+      openedDate: body.openedDate ?? Date.now(),
+      stageHistory: body.stageHistory ?? [{ stage: 'Open', timestamp: body.openedDate ?? Date.now() }]
+    });
+    response.status(201).json({ message: 'CAPA created successfully.', capa, mode: 'demo' });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.patch('/api/capa/:id', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  const capaId = request.params.id;
+  const body = request.body || {};
+  const updates = { ...body };
+  delete updates.shiftName;
+
+  try {
+    const capa = await updateCapa(capaId, updates);
+    if (!capa) {
+      return sendError(response, 404, 'CAPA not found.');
+    }
+
+    if (capa.status === 'Closed' && capa.ncrId) {
+      await updateNcr(shiftName, capa.ncrId, { status: 'Closed' });
+    }
+
+    response.json({ message: 'CAPA updated successfully.', capa, mode: 'demo' });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
 app.post('/api/ai/quality-analysis', async (request, response) => {
   const shiftName = resolveShiftName(request);
   const contextData = await buildAiContext(shiftName);
@@ -406,7 +458,7 @@ app.post('/api/ai/root-cause', async (request, response) => {
       machine,
       defectType,
       issueDescription,
-      previousCapas: previousCapas ?? demoCapas
+      previousCapas: previousCapas ?? (await listCapas())
     }
   });
 });
@@ -433,7 +485,7 @@ app.post('/api/ai/shift-report', async (request, response) => {
   const shiftName = resolveShiftName(request);
   const dashboard = await getDashboardPayload(shiftName);
   const openNcrs = (dashboard.ncrs ?? []).filter((ncr) => ncr.status !== 'Closed');
-  const overdueCapas = demoCapas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed');
+  const overdueCapas = (await listCapas()).filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed');
   const contextData = {
     summary: dashboard.summary,
     machines: dashboard.presses,

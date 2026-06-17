@@ -4,6 +4,11 @@ import { OeeTrendChart, DowntimeParetoChart } from './Charts.jsx';
 import PressPanel from './PressPanel.jsx';
 import OrderPanel from './OrderPanel.jsx';
 import AnomalyPanel from './AnomalyPanel.jsx';
+import CalibrationPanel from './CalibrationPanel.jsx';
+import CertificationPanel from './CertificationPanel.jsx';
+import SupplierPanel from './SupplierPanel.jsx';
+import CapaPanel from './CapaPanel.jsx';
+import AssistantPanel from './AssistantPanel.jsx';
 
 const shiftTabs = ['Shift A', 'Shift B'];
 const navSections = [
@@ -79,15 +84,6 @@ const tabMeta = {
     description: 'Demo preferences, dashboard thresholds, and operator configuration.'
   }
 };
-
-const PLACEHOLDER_TABS = new Set([
-  'Supply Chain',
-  'Quality & NCR',
-  'Calibration',
-  'Certifications',
-  'Suppliers',
-  'CAPA'
-]);
 
 function formatShortNumber(value) {
   return new Intl.NumberFormat('en-US').format(value);
@@ -262,16 +258,6 @@ function SectionCard({ title, subtitle, badge, children }) {
   );
 }
 
-function PlaceholderCard({ tab }) {
-  return (
-    <div className="placeholder-card">
-      <h2>{tabMeta[tab].title}</h2>
-      <p>{tabMeta[tab].description}</p>
-      <span className="badge tone-muted">Coming Soon</span>
-    </div>
-  );
-}
-
 function ReportCard({ text, activeShift }) {
   const sections = parseShiftReport(text);
 
@@ -312,10 +298,74 @@ function anomalyTone(severity) {
   return severity === 'Critical' ? 'danger' : 'warning';
 }
 
+function calibrationTone(status) {
+  if (status === 'Overdue') return 'danger';
+  if (status === 'Due Soon') return 'warning';
+  return 'success';
+}
+
 function ncrStatusTone(status) {
   if (status === 'Closed') return 'success';
   if (status === 'Under Review') return 'warning';
   return 'danger';
+}
+
+function getEmployeeStatus(employee) {
+  if (employee.certifications?.some((cert) => cert.status === 'Expired')) return 'Expired';
+  if (
+    employee.certifications?.some((cert) => {
+      const daysToExpiry = (cert.expiryDate - Date.now()) / 86400000;
+      return daysToExpiry > 0 && daysToExpiry <= 30 && cert.status !== 'Expired';
+    })
+  ) {
+    return 'Expiring Soon';
+  }
+  return 'Current';
+}
+
+function getSupplierAuditTrend(supplier) {
+  const history = [...(supplier.auditHistory ?? [])]
+    .filter((entry) => typeof entry.score === 'number')
+    .sort((a, b) => a.date - b.date);
+
+  if (history.length < 2) return 'stable';
+  const latest = history[history.length - 1].score;
+  const previous = history[history.length - 2].score;
+  if (latest < previous) return 'declining';
+  if (latest > previous) return 'improving';
+  return 'stable';
+}
+
+function getSupplierStatusTone(status) {
+  if (status === 'Suspended') return 'danger';
+  if (status === 'Requalification Due') return 'warning';
+  return 'success';
+}
+
+function getCapaStatusTone(status) {
+  if (status === 'Closed') return 'success';
+  if (status === 'Overdue') return 'danger';
+  return 'warning';
+}
+
+function formatCapaDueDate(dueDate) {
+  const diffMs = dueDate - Date.now();
+  const diffDays = Math.floor(Math.abs(diffMs) / 86400000);
+  return diffMs > 0 ? `In ${diffDays}d` : `Overdue ${diffDays}d`;
+}
+
+function getCapaStageProgress(capa) {
+  const stages = ['Open', 'Root Cause Analysis', 'Action Pending', 'Verification', 'Closed'];
+  const currentIndex = stages.indexOf(capa.status);
+  return currentIndex < 0 ? 0 : Math.round((currentIndex / (stages.length - 1)) * 100);
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="assistant-toggle-icon">
+      <path d="M4 4h16v11H8l-4 4V4zm3 4h10v2H7V8zm0 3h7v2H7v-2z" />
+    </svg>
+  );
 }
 
 function formatRelativeMinutes(timestamp) {
@@ -342,6 +392,12 @@ function formatRelativeDate(timestamp) {
   const days = Math.floor(hours / 24);
   const dayRemainder = hours % 24;
   return dayRemainder ? `${days}d ${dayRemainder}h ago` : `${days}d ago`;
+}
+
+function deriveCalibrationStatus(nextDue) {
+  if (nextDue < Date.now()) return 'Overdue';
+  if (nextDue < Date.now() + 30 * 86400000) return 'Due Soon';
+  return 'Current';
 }
 
 function parseShiftReport(text) {
@@ -381,8 +437,28 @@ function App() {
   const [reportHistory, setReportHistory] = useState([]);
   const [anomalies, setAnomalies] = useState([]);
   const [selectedAnomalyId, setSelectedAnomalyId] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [employeesSeedShift, setEmployeesSeedShift] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
+  const [calibrations, setCalibrations] = useState([]);
+  const [selectedCalibrationAssetTag, setSelectedCalibrationAssetTag] = useState(null);
+  const [calibrationSort, setCalibrationSort] = useState({ field: 'nextDue', dir: 'asc' });
+  const [calibrationModalOpen, setCalibrationModalOpen] = useState(false);
+  const [calibrationForm, setCalibrationForm] = useState({
+    assetTag: '',
+    name: '',
+    type: 'Gauge',
+    location: '',
+    intervalDays: '90',
+    lastCalibrated: '',
+    calibratedBy: ''
+  });
   const [ncrs, setNcrs] = useState([]);
   const [capas, setCapas] = useState([]);
+  const [selectedCapaId, setSelectedCapaId] = useState(null);
+  const [highlightedNcr, setHighlightedNcr] = useState('');
+  const [suppliers, setSuppliers] = useState([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState(null);
   const [qualityAnalysisText, setQualityAnalysisText] = useState('');
   const [qualityAnalysisLoading, setQualityAnalysisLoading] = useState(false);
   const [ncrModalOpen, setNcrModalOpen] = useState(false);
@@ -397,6 +473,9 @@ function App() {
   const [requestSystem, setRequestSystem] = useState('');
   const [requestText, setRequestText] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMessages, setAssistantMessages] = useState([]);
+  const [assistantStreaming, setAssistantStreaming] = useState(false);
   const [anomalyThresholds, setAnomalyThresholds] = useState({
     warningOeeDrop: 8,
     criticalOee: 65,
@@ -508,7 +587,66 @@ function App() {
     setQualityAnalysisLoading(false);
     setNcrModalOpen(false);
     setRequestModalOpen(false);
+    setSelectedEmployeeId(null);
+    setSelectedCapaId(null);
+    setHighlightedNcr('');
+    setSelectedSupplierId(null);
   }, [shift]);
+
+  const handleAssistantMessage = async (text) => {
+    const content = text.trim();
+    if (!content || assistantStreaming) return;
+
+    const userMsg = { role: 'user', content };
+    const nextMessages = [...assistantMessages, userMsg];
+    setAssistantMessages([...nextMessages, { role: 'assistant', content: '' }]);
+    setAssistantStreaming(true);
+
+    try {
+      const response = await fetch(`${baseUrl}api/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: nextMessages, shiftName: shift })
+      });
+
+      if (response.status === 503) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'Operations Assistant is not configured. Please set ANTHROPIC_API_KEY on the server.');
+      }
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let finalText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        finalText += chunk;
+        setAssistantMessages((current) => [
+          ...current.slice(0, -1),
+          { role: 'assistant', content: finalText }
+        ]);
+      }
+    } catch (error) {
+      setAssistantMessages((current) => [
+        ...current.slice(0, -1),
+        {
+          role: 'assistant',
+          content:
+            error.message === 'ANTHROPIC_API_KEY not configured' || error.message.includes('not configured')
+              ? 'Operations Assistant is not configured. Please set ANTHROPIC_API_KEY on the server.'
+              : error.message
+        }
+      ]);
+    } finally {
+      setAssistantStreaming(false);
+    }
+  };
 
   useEffect(() => {
     if (!toastMessage) return undefined;
@@ -579,6 +717,17 @@ function App() {
   useEffect(() => {
     setNcrs(payload?.ncrs ?? []);
     setCapas(payload?.capas ?? []);
+    if (suppliers.length === 0 && payload?.suppliers?.length) {
+      setSuppliers(payload.suppliers);
+    }
+    if (calibrations.length === 0 && payload?.calibrations?.length) {
+      setCalibrations(
+        payload.calibrations.map((instrument) => ({
+          ...instrument,
+          status: deriveCalibrationStatus(instrument.nextDue)
+        }))
+      );
+    }
 
     if (!payload) return;
 
@@ -596,7 +745,41 @@ function App() {
           ? current.defectType
           : defectOptions[0]?.type ?? ''
     }));
-  }, [payload?.ncrs, payload?.presses, payload?.defects, payload]);
+  }, [payload?.ncrs, payload?.presses, payload?.defects, payload, calibrations.length, suppliers.length]);
+
+  useEffect(() => {
+    if (selectedSupplierId && suppliers.some((supplier) => supplier.id === selectedSupplierId)) return;
+    if (selectedSupplierId) {
+      setSelectedSupplierId(null);
+    }
+  }, [selectedSupplierId, suppliers]);
+
+  useEffect(() => {
+    if (selectedCapaId && capas.some((capa) => capa.id === selectedCapaId)) return;
+    if (selectedCapaId) {
+      setSelectedCapaId(null);
+    }
+  }, [selectedCapaId, capas]);
+
+  useEffect(() => {
+    if (!highlightedNcr) return;
+    if (ncrs.some((ncr) => ncr.id === highlightedNcr)) return;
+    setHighlightedNcr('');
+  }, [highlightedNcr, ncrs]);
+
+  useEffect(() => {
+    if (!payload?.employees?.length) return;
+    if (employeesSeedShift === shift && employees.length) return;
+
+    setEmployees(payload.employees);
+    setEmployeesSeedShift(shift);
+  }, [payload?.employees, shift, employeesSeedShift, employees.length]);
+
+  useEffect(() => {
+    if (!selectedCalibrationAssetTag) return;
+    if (calibrations.some((instrument) => instrument.assetTag === selectedCalibrationAssetTag)) return;
+    setSelectedCalibrationAssetTag(null);
+  }, [calibrations, selectedCalibrationAssetTag]);
 
   useEffect(() => {
     if (!payload?.presses?.length) return undefined;
@@ -913,21 +1096,150 @@ function App() {
     };
   }, [ncrs, payload]);
 
+  const calibrationCounts = useMemo(
+    () => ({
+      total: calibrations.length,
+      current: calibrations.filter((instrument) => instrument.status === 'Current').length,
+      dueSoon: calibrations.filter((instrument) => instrument.status === 'Due Soon').length,
+      overdue: calibrations.filter((instrument) => instrument.status === 'Overdue').length
+    }),
+    [calibrations]
+  );
+
+  const sortedCalibrations = useMemo(() => {
+    const sorted = [...calibrations].sort((a, b) => {
+      const { field, dir } = calibrationSort;
+      const valueA = a[field];
+      const valueB = b[field];
+
+      if (valueA === valueB) return 0;
+
+      if (typeof valueA === 'string' || typeof valueB === 'string') {
+        const comparison = String(valueA).localeCompare(String(valueB));
+        return dir === 'asc' ? comparison : -comparison;
+      }
+
+      const comparison = valueA < valueB ? -1 : 1;
+      return dir === 'asc' ? comparison : -comparison;
+    });
+
+    return sorted;
+  }, [calibrationSort, calibrations]);
+
+  const selectedCalibration =
+    calibrations.find((instrument) => instrument.assetTag === selectedCalibrationAssetTag) ?? null;
+
+  const employeeRoster = employees.length ? employees : payload?.employees ?? [];
+  const supplierRoster = suppliers.length ? suppliers : payload?.suppliers ?? [];
+  const certModel = useMemo(() => {
+    const coverageGaps = employeeRoster.filter((employee) => {
+      const machineCert = employee.certifications?.find((cert) =>
+        cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase())
+      );
+      return machineCert?.status === 'Expired' || employee.shiftStatus === 'Absent';
+    });
+
+    const certCounts = {
+      total: employeeRoster.length,
+      fullyCertified: employeeRoster.filter((employee) =>
+        employee.certifications?.every((cert) => cert.status === 'Current')
+      ).length,
+      expiringSoon: employeeRoster.filter((employee) =>
+        employee.certifications?.some((cert) => {
+          const daysToExpiry = (cert.expiryDate - Date.now()) / 86400000;
+          return daysToExpiry > 0 && daysToExpiry <= 30;
+        })
+      ).length,
+      expired: employeeRoster.filter((employee) =>
+        employee.certifications?.some((cert) => cert.status === 'Expired')
+      ).length
+    };
+
+    const selectedEmployee =
+      employeeRoster.find((employee) => employee.id === selectedEmployeeId) ?? null;
+
+    const sortedEmployees = [...employeeRoster].sort((a, b) => {
+      const statusOrder = { Expired: 0, 'Expiring Soon': 1, Current: 2 };
+      const statusA = getEmployeeStatus(a);
+      const statusB = getEmployeeStatus(b);
+      if (statusA !== statusB) return statusOrder[statusA] - statusOrder[statusB];
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      certCounts,
+      coverageGaps,
+      selectedEmployee,
+      sortedEmployees
+    };
+  }, [employeeRoster, selectedEmployeeId]);
+
+  const supplierModel = useMemo(() => {
+    const selectedSupplier =
+      supplierRoster.find((supplier) => supplier.id === selectedSupplierId) ?? null;
+
+    const supplierCounts = {
+      total: supplierRoster.length,
+      approved: supplierRoster.filter((supplier) => supplier.status === 'Approved').length,
+      requalDue: supplierRoster.filter((supplier) => supplier.status === 'Requalification Due').length,
+      onHold: supplierRoster.filter((supplier) => supplier.status === 'Suspended').length
+    };
+
+    const sortedSuppliers = [...supplierRoster].sort((a, b) => {
+      const order = { Suspended: 0, 'Requalification Due': 1, Approved: 2 };
+      const statusA = order[a.status] ?? 3;
+      const statusB = order[b.status] ?? 3;
+      if (statusA !== statusB) return statusA - statusB;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      supplierCounts,
+      selectedSupplier,
+      sortedSuppliers
+    };
+  }, [supplierRoster, selectedSupplierId]);
+
+  const capaModel = useMemo(() => {
+    const stages = ['Open', 'Root Cause Analysis', 'Action Pending', 'Verification', 'Closed'];
+    const selectedCapa = capas.find((capa) => capa.id === selectedCapaId) ?? null;
+
+    const capaCounts = {
+      total: capas.length,
+      open: capas.filter((capa) => capa.status === 'Open').length,
+      inProgress: capas.filter((capa) => ['Root Cause Analysis', 'Action Pending', 'Verification'].includes(capa.status)).length,
+      overdue: capas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed').length,
+      closedThisMonth: capas.filter((capa) => {
+        const now = new Date();
+        const closed = new Date(capa.closedAt ?? 0);
+        return capa.status === 'Closed' && closed.getMonth() === now.getMonth() && closed.getFullYear() === now.getFullYear();
+      }).length
+    };
+
+    const sortedCapas = [...capas].sort((a, b) => {
+      if (a.status === b.status) return b.openedDate - a.openedDate;
+      return stages.indexOf(a.status) - stages.indexOf(b.status);
+    });
+
+    return {
+      capaCounts,
+      selectedCapa,
+      sortedCapas
+    };
+  }, [capas, selectedCapaId]);
+
   const badgeCounts = useMemo(() => {
-    const calibrations = payload?.calibrations ?? [];
-    const employees = payload?.employees ?? [];
     const alerts = payload?.alerts ?? [];
 
     return {
       'Quality & NCR': ncrs.filter((ncr) => ncr.status !== 'Closed').length,
-      CAPA: capas.filter((capa) => capa.dueDate < Date.now() && capa.status !== 'Closed').length,
+      CAPA: capaModel.capaCounts.overdue,
       Calibration: calibrations.filter((calibration) => calibration.status === 'Overdue').length,
-      Certifications: employees.filter((employee) =>
-        employee.certifications?.some((cert) => cert.status === 'Expired')
-      ).length,
+      Certifications: certModel.certCounts.expired,
+      Suppliers: supplierModel.supplierCounts.onHold,
       Alerts: alerts.length
     };
-  }, [payload, ncrs, capas]);
+  }, [payload, ncrs, capaModel.capaCounts.overdue, calibrations, certModel.certCounts.expired, supplierModel.supplierCounts.onHold]);
 
   const syncLog = useMemo(
     () => [
@@ -954,7 +1266,7 @@ function App() {
   );
 
   const workforceModel = useMemo(() => {
-    const employees = payload?.employees ?? [];
+    const employees = employeeRoster;
     const presses = payload?.presses ?? [];
 
     const coverageGapEmployees = employees.filter((employee) => employee.shiftStatus === 'Absent');
@@ -1006,7 +1318,7 @@ function App() {
       coverageGapEmployees,
       expiredCertEmployees
     };
-  }, [payload, performanceSort]);
+  }, [payload, performanceSort, employeeRoster]);
 
   useEffect(() => {
     setOptimizerResult('');
@@ -1241,27 +1553,75 @@ function App() {
     }
   };
 
-  const handleCloseCapa = (capaId) => {
-    const closedAt = Date.now();
+  const persistCapaUpdate = async (updatedCapa) => {
+    try {
+      const response = await fetch(`${baseUrl}api/capa/${encodeURIComponent(updatedCapa.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shiftName: shift,
+          ...updatedCapa
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data?.capa) {
+        setCapas((current) => current.map((capa) => (capa.id === data.capa.id ? data.capa : capa)));
+      }
+      if (data?.capa?.status === 'Closed' && data.capa.ncrId) {
+        setNcrs((current) => current.map((ncr) => (ncr.id === data.capa.ncrId ? { ...ncr, status: 'Closed' } : ncr)));
+      }
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const handleAdvanceCapaStage = (capaId) => {
+    const stages = ['Open', 'Root Cause Analysis', 'Action Pending', 'Verification', 'Closed'];
     const target = capas.find((capa) => capa.id === capaId);
     if (!target) return;
 
-    setCapas((current) =>
-      current.map((capa) =>
-        capa.id === capaId
-          ? {
-              ...capa,
-              status: 'Closed',
-              percentComplete: 100,
-              stageHistory: [...(capa.stageHistory ?? []), { stage: 'Closed', timestamp: closedAt }]
-            }
-          : capa
-      )
-    );
+    const currentIdx = stages.indexOf(target.status);
+    if (currentIdx < 0 || currentIdx >= stages.length - 1) return;
 
-    if (target.ncrId) {
+    const nextStage = stages[currentIdx + 1];
+    const timestamp = Date.now();
+    const updatedCapa = {
+      ...target,
+      status: nextStage,
+      percentComplete: nextStage === 'Closed' ? 100 : Math.max(target.percentComplete, Math.round(((currentIdx + 1) / (stages.length - 1)) * 100)),
+      stageHistory: [...(target.stageHistory ?? []), { stage: nextStage, timestamp }],
+      ...(nextStage === 'Closed' ? { closedAt: timestamp } : {})
+    };
+
+    setCapas((current) => current.map((capa) => (capa.id === capaId ? updatedCapa : capa)));
+    if (nextStage === 'Closed' && target.ncrId) {
       setNcrs((current) => current.map((ncr) => (ncr.id === target.ncrId ? { ...ncr, status: 'Closed' } : ncr)));
     }
+    persistCapaUpdate(updatedCapa);
+  };
+
+  const handleToggleCapaAction = (capaId, actionId) => {
+    const target = capas.find((capa) => capa.id === capaId);
+    if (!target) return;
+
+    const actions = (target.actions ?? []).map((action) =>
+      action.id === actionId ? { ...action, completed: !action.completed } : action
+    );
+    const completedCount = actions.filter((action) => action.completed).length;
+    const percentComplete = actions.length ? Math.round((completedCount / actions.length) * 100) : target.percentComplete;
+    const updatedCapa = {
+      ...target,
+      actions,
+      percentComplete
+    };
+
+    setCapas((current) => current.map((capa) => (capa.id === capaId ? updatedCapa : capa)));
+    persistCapaUpdate(updatedCapa);
   };
 
   const handleRequestIntegration = () => {
@@ -1270,6 +1630,123 @@ function App() {
     setToastMessage('Thanks - we\'ll follow up within 24 hours');
     setRequestSystem('');
     setRequestText('');
+  };
+
+  const handleScheduleCalibration = ({ instrument, scheduledDate, provider, type }) => {
+    const formattedDate = new Date(scheduledDate).toLocaleDateString();
+    setToastMessage(`Recalibration scheduled for ${formattedDate}.`);
+    setCalibrations((current) =>
+      current.map((item) =>
+        item.assetTag === instrument.assetTag
+          ? {
+              ...item,
+              lastScheduledAt: Date.now(),
+              nextDue: item.nextDue,
+              scheduledProvider: provider,
+              scheduledType: type
+            }
+          : item
+      )
+    );
+  };
+
+  const handleAddInstrument = () => {
+    const lastCalibrated = new Date(calibrationForm.lastCalibrated);
+    const intervalDays = Number(calibrationForm.intervalDays) || 0;
+
+    if (
+      !calibrationForm.assetTag.trim() ||
+      !calibrationForm.name.trim() ||
+      !calibrationForm.location.trim() ||
+      !Number.isFinite(lastCalibrated.getTime()) ||
+      intervalDays <= 0
+    ) {
+      return;
+    }
+
+    const lastCalibratedMs = lastCalibrated.getTime();
+    const nextDue = lastCalibratedMs + intervalDays * 86400000;
+    const status = deriveCalibrationStatus(nextDue);
+
+    const nextInstrument = {
+      assetTag: calibrationForm.assetTag.trim(),
+      name: calibrationForm.name.trim(),
+      type: calibrationForm.type,
+      location: calibrationForm.location.trim(),
+      intervalDays,
+      lastCalibrated: lastCalibratedMs,
+      nextDue,
+      certNumber: calibrationForm.assetTag.trim(),
+      calibratedBy: calibrationForm.calibratedBy.trim() || 'Internal QA',
+      results: { measured: '', tolerance: '', outcome: 'Pass' },
+      status
+    };
+
+    setCalibrations((current) => [...current, nextInstrument]);
+    setCalibrationModalOpen(false);
+    setToastMessage(`Instrument ${nextInstrument.assetTag} added as ${status.toLowerCase()}.`);
+    setCalibrationForm({
+      assetTag: '',
+      name: '',
+      type: 'Gauge',
+      location: '',
+      intervalDays: '90',
+      lastCalibrated: '',
+      calibratedBy: ''
+    });
+  };
+
+  const handleLogTraining = (employeeId, cert) => {
+    if (!cert?.name) return;
+
+    setEmployees((current) =>
+      current.map((employee) =>
+        employee.id === employeeId
+          ? {
+              ...employee,
+              certifications: [
+                ...employee.certifications.filter((item) => item.name !== cert.name),
+                cert
+              ]
+            }
+          : employee
+      )
+    );
+    setToastMessage(`Training logged for ${cert.name}.`);
+  };
+
+  const handleSupplierStatusChange = (supplierId, newStatus) => {
+    setSuppliers((current) =>
+      current.map((supplier) =>
+        supplier.id === supplierId ? { ...supplier, status: newStatus } : supplier
+      )
+    );
+    setToastMessage(`Supplier status updated to ${newStatus}.`);
+  };
+
+  const handleScheduleAudit = (supplierId, scheduledDate, notes = '') => {
+    const targetDate = new Date(scheduledDate);
+    if (!Number.isFinite(targetDate.getTime())) return;
+
+    setSuppliers((current) =>
+      current.map((supplier) =>
+        supplier.id === supplierId
+          ? {
+              ...supplier,
+              auditHistory: [
+                ...(supplier.auditHistory ?? []),
+                {
+                  date: targetDate.getTime(),
+                  type: 'Scheduled',
+                  score: null,
+                  outcome: `Pending${notes ? ` - ${notes.trim()}` : ''}`
+                }
+              ]
+            }
+          : supplier
+      )
+    );
+    setToastMessage(`Audit scheduled for ${targetDate.toLocaleDateString()}.`);
   };
 
   useEffect(() => {
@@ -1295,11 +1772,12 @@ function App() {
       value: shiftSummaries[item] ?? 1
     }));
     const materials = payload.materials ?? [];
-    const suppliers = payload.suppliers ?? [];
+    const suppliers = supplierRoster;
     const criticalMaterials = materials.filter((material) => material.status === 'Critical');
     const displayedSuppliers = suppliers.map((supplier) => ({
       ...supplier,
-      effectiveRiskLevel: effectiveRiskLevel(supplier)
+      effectiveRiskLevel: effectiveRiskLevel(supplier),
+      auditTrend: getSupplierAuditTrend(supplier)
     }));
 
     return {
@@ -1570,7 +2048,12 @@ function App() {
               </div>
               <div className="supplier-risk-list">
                 {displayedSuppliers.map((supplier) => (
-                  <div key={supplier.id} className="supplier-risk-row">
+                  <button
+                    key={supplier.id}
+                    type="button"
+                    className="supplier-risk-row"
+                    onClick={() => setSelectedSupplierId(supplier.id)}
+                  >
                     <div>
                       <strong>{supplier.name}</strong>
                       <span>{supplier.id} · {supplier.materials.join(', ')}</span>
@@ -1578,7 +2061,7 @@ function App() {
                     <span className={`badge tone-${supplier.effectiveRiskLevel === 'High' ? 'danger' : supplier.effectiveRiskLevel === 'Medium' ? 'warning' : 'success'}`}>
                       {supplier.effectiveRiskLevel} Risk
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
 
@@ -1904,7 +2387,10 @@ function App() {
                   </thead>
                   <tbody>
                     {ncrs.map((ncr) => (
-                      <tr key={ncr.id} className={`ncr-row tone-${ncrStatusTone(ncr.status)}`}>
+                      <tr
+                        key={ncr.id}
+                        className={`ncr-row tone-${ncrStatusTone(ncr.status)}${highlightedNcr === ncr.id ? ' row-highlighted' : ''}`}
+                      >
                         <td>{ncr.id}</td>
                         <td>{formatRelativeDate(ncr.date)}</td>
                         <td>{ncr.machine}</td>
@@ -1923,9 +2409,322 @@ function App() {
           </section>
         </>
       ),
-      Calibration: <PlaceholderCard tab="Calibration" />,
-      Certifications: <PlaceholderCard tab="Certifications" />,
-      Suppliers: <PlaceholderCard tab="Suppliers" />,
+      Calibration: (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="stat-grid calibration-stats">
+            <article className="stat-card tone-cyan">
+              <div className="stat-head">
+                <span>Total</span>
+              </div>
+              <div className="stat-value">{calibrationCounts.total}</div>
+              <div className="stat-delta">Instruments tracked</div>
+            </article>
+            <article className="stat-card tone-success">
+              <div className="stat-head">
+                <span>Current</span>
+              </div>
+              <div className="stat-value">{calibrationCounts.current}</div>
+              <div className="stat-delta">Within interval</div>
+            </article>
+            <article className="stat-card tone-warning">
+              <div className="stat-head">
+                <span>Due Soon</span>
+              </div>
+              <div className="stat-value">{calibrationCounts.dueSoon}</div>
+              <div className="stat-delta">Within 30 days</div>
+            </article>
+            <article className="stat-card tone-danger">
+              <div className="stat-head">
+                <span>Overdue</span>
+              </div>
+              <div className="stat-value">{calibrationCounts.overdue}</div>
+              <div className="stat-delta">Needs immediate action</div>
+            </article>
+          </section>
+
+          <section className="section-card calibration-panel-shell">
+            <div className="section-card-header">
+              <div>
+                <h3>Calibration Register</h3>
+                <p>Sort by any column and open a calibration record for details.</p>
+              </div>
+              <button type="button" className="btn-primary" onClick={() => setCalibrationModalOpen(true)}>
+                + Add Instrument
+              </button>
+            </div>
+            <div className="table-scroll">
+              <table className="calibration-table">
+                <thead>
+                  <tr>
+                    {[
+                      ['assetTag', 'Asset Tag'],
+                      ['name', 'Instrument'],
+                      ['type', 'Type'],
+                      ['location', 'Location'],
+                      ['lastCalibrated', 'Last Calibrated'],
+                      ['nextDue', 'Next Due'],
+                      ['status', 'Status']
+                    ].map(([field, label]) => (
+                      <th key={field}>
+                        <button
+                          type="button"
+                          className="sortable-head"
+                          onClick={() =>
+                            setCalibrationSort((current) => ({
+                              field,
+                              dir: current.field === field && current.dir === 'asc' ? 'desc' : 'asc'
+                            }))
+                          }
+                        >
+                          {label}
+                          {calibrationSort.field === field ? ` ${calibrationSort.dir === 'asc' ? '^' : 'v'}` : null}
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCalibrations.map((instrument) => {
+                    const rowTone = calibrationTone(instrument.status);
+                    return (
+                      <tr
+                        key={instrument.assetTag}
+                        className={instrument.status === 'Overdue' ? 'row-danger' : instrument.status === 'Due Soon' ? 'row-warning' : ''}
+                        onClick={() => setSelectedCalibrationAssetTag(instrument.assetTag)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td className="mono">{instrument.assetTag}</td>
+                        <td>
+                          <strong>{instrument.name}</strong>
+                        </td>
+                        <td>{instrument.type}</td>
+                        <td>{instrument.location}</td>
+                        <td>{new Date(instrument.lastCalibrated).toLocaleDateString()}</td>
+                        <td>{new Date(instrument.nextDue).toLocaleDateString()}</td>
+                        <td>
+                          <span className={`badge tone-${rowTone}`}>{instrument.status}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ),
+      Certifications: (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="section-card">
+            <div className="section-card-header">
+              <div>
+                <h3>Compliance Overview</h3>
+                <p>Certification coverage across the current active roster.</p>
+              </div>
+            </div>
+            <div className="quality-grid certification-grid">
+              <article className="quality-item">
+                <span>Total Employees</span>
+                <strong>{certModel.certCounts.total}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Fully Certified</span>
+                <strong>{certModel.certCounts.fullyCertified}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Expiring Soon</span>
+                <strong>{certModel.certCounts.expiringSoon}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Expired</span>
+                <strong>{certModel.certCounts.expired}</strong>
+              </article>
+            </div>
+          </section>
+
+          <section className="tab-grid tab-grid-2">
+            <SectionCard title="Coverage Gap Alerts" subtitle="Expired machine certifications that create a staffing gap" badge="Live">
+              <div className="workforce-alert-stack">
+                {certModel.coverageGaps.map((employee) => {
+                  const machineCert = employee.certifications.find((cert) =>
+                    cert.name.toLowerCase().includes(employee.assignedMachine.toLowerCase())
+                  );
+                  const daysAgo = Math.floor((Date.now() - (machineCert?.expiryDate ?? Date.now())) / 86400000);
+
+                  return (
+                    <article key={employee.id} className="alert-card tone-danger workforce-alert-card">
+                      <div className="alert-head">
+                        <strong>{employee.name}</strong>
+                        <span>{employee.id}</span>
+                      </div>
+                      <p>
+                        Coverage gap: {employee.name} ({employee.id}) is assigned to {employee.assignedMachine} but their Machine Operation certification expired {daysAgo} day(s) ago.
+                      </p>
+                    </article>
+                  );
+                })}
+
+                {!certModel.coverageGaps.length ? (
+                  <div className="note-row">
+                    <strong>No coverage gaps</strong>
+                    <span>All machine certifications are current.</span>
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Employee Certification Matrix" subtitle="Click a row to inspect and log new training" badge="Live">
+              <div className="table-scroll">
+                <table className="cert-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Role</th>
+                      <th>Assigned Machine</th>
+                      <th>Status</th>
+                      <th>Certifications</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {certModel.sortedEmployees.map((employee) => {
+                      const rowStatus = getEmployeeStatus(employee);
+                      return (
+                        <tr
+                          key={employee.id}
+                          className={rowStatus === 'Expired' ? 'row-danger' : rowStatus === 'Expiring Soon' ? 'row-warning' : ''}
+                          onClick={() => setSelectedEmployeeId(employee.id)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <td>
+                            <strong>{employee.name}</strong>
+                            <div className="muted">{employee.id}</div>
+                          </td>
+                          <td>{employee.role}</td>
+                          <td>{employee.assignedMachine}</td>
+                          <td>
+                            <span className={`badge tone-${rowStatus === 'Expired' ? 'danger' : rowStatus === 'Expiring Soon' ? 'warning' : 'success'}`}>
+                              {rowStatus}
+                            </span>
+                          </td>
+                          <td>{employee.certifications.length}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+          </section>
+        </>
+      ),
+      Suppliers: (
+        <>
+          <div className="tab-live-row">
+            <span className="live-chip">
+              <span className="live-dot" />
+              Live
+            </span>
+          </div>
+
+          <section className="section-card">
+            <div className="section-card-header">
+              <div>
+                <h3>Supplier Qualification Overview</h3>
+                <p>Coverage across approved, requalification due, and on-hold suppliers.</p>
+              </div>
+            </div>
+            <div className="quality-grid supplier-summary-grid">
+              <article className="quality-item">
+                <span>Total Suppliers</span>
+                <strong>{supplierModel.supplierCounts.total}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Approved</span>
+                <strong>{supplierModel.supplierCounts.approved}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Requalification Due</span>
+                <strong>{supplierModel.supplierCounts.requalDue}</strong>
+              </article>
+              <article className="quality-item">
+                <span>On Hold</span>
+                <strong>{supplierModel.supplierCounts.onHold}</strong>
+              </article>
+            </div>
+          </section>
+
+          <section className="section-card supplier-register-card">
+            <div className="section-card-header">
+              <div>
+                <h3>Supplier Register</h3>
+                <p>Audit score, qualification status, and delivery risk at a glance.</p>
+              </div>
+            </div>
+            <div className="table-scroll">
+              <table className="supplier-table">
+                <thead>
+                  <tr>
+                    <th>Supplier</th>
+                    <th>Materials</th>
+                    <th>Audit Score</th>
+                    <th>Status</th>
+                    <th>Risk</th>
+                    <th>History</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {supplierModel.sortedSuppliers.map((supplier) => {
+                    const trend = getSupplierAuditTrend(supplier);
+                    return (
+                      <tr
+                        key={supplier.id}
+                        className={supplier.status === 'Suspended' ? 'row-danger' : supplier.status === 'Requalification Due' ? 'row-warning' : ''}
+                        onClick={() => setSelectedSupplierId(supplier.id)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td>
+                          <strong>{supplier.name}</strong>
+                          <div className="muted">{supplier.id}</div>
+                        </td>
+                        <td>{supplier.materials.join(', ')}</td>
+                        <td style={{ color: supplier.auditScore >= 80 ? 'var(--success)' : supplier.auditScore >= 60 ? 'var(--warning)' : 'var(--danger)', fontWeight: 600 }}>
+                          {supplier.auditScore}
+                        </td>
+                        <td>
+                          <span className={`badge tone-${getSupplierStatusTone(supplier.status)}`}>{supplier.status}</span>
+                        </td>
+                        <td>
+                          <span className={`badge tone-${supplier.effectiveRiskLevel === 'High' ? 'danger' : supplier.effectiveRiskLevel === 'Medium' ? 'warning' : 'success'}`}>
+                            {supplier.effectiveRiskLevel} Risk
+                          </span>
+                        </td>
+                        <td>
+                          {supplier.auditHistory?.length ?? 0} entries
+                          {trend === 'declining' ? <div className="supplier-warning">↓ Declining</div> : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ),
       CAPA: (
         <>
           <div className="tab-live-row">
@@ -1935,38 +2734,88 @@ function App() {
             </span>
           </div>
 
-          <SectionCard title="CAPA Register" subtitle="Open and closed corrective actions linked to NCRs" badge="Live">
+          <section className="section-card">
+            <div className="section-card-header">
+              <div>
+                <h3>CAPA Tracker</h3>
+                <p>Track corrective actions through root cause, containment, verification, and closeout.</p>
+              </div>
+            </div>
+            <div className="quality-grid capa-summary-grid">
+              <article className="quality-item">
+                <span>Total CAPAs</span>
+                <strong>{capaModel.capaCounts.total}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Open</span>
+                <strong>{capaModel.capaCounts.open}</strong>
+              </article>
+              <article className="quality-item">
+                <span>In Progress</span>
+                <strong>{capaModel.capaCounts.inProgress}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Overdue</span>
+                <strong>{capaModel.capaCounts.overdue}</strong>
+              </article>
+              <article className="quality-item">
+                <span>Closed This Month</span>
+                <strong>{capaModel.capaCounts.closedThisMonth}</strong>
+              </article>
+            </div>
+          </section>
+
+          <SectionCard title="CAPA Register" subtitle="Click a record to inspect the stage workflow and root cause work" badge="Live">
             <div className="capa-list">
-              {[...capas]
-                .sort((a, b) => {
-                  if (a.status === b.status) return b.openedDate - a.openedDate;
-                  return a.status === 'Closed' ? 1 : -1;
-                })
-                .map((capa) => {
-                  const tone = capa.status === 'Closed' ? 'success' : capa.status === 'Overdue' ? 'danger' : 'warning';
-                  return (
-                    <article key={capa.id} className="capa-card">
-                      <div className="capa-card-top">
-                        <div>
-                          <strong>{capa.id}</strong>
-                          <span>{capa.machine} · {capa.defectType}</span>
-                        </div>
-                        <span className={`badge tone-${tone}`}>{capa.status}</span>
+              {capaModel.sortedCapas.map((capa) => {
+                const tone = getCapaStatusTone(capa.status);
+                const progress = getCapaStageProgress(capa);
+                return (
+                  <article
+                    key={capa.id}
+                    className={`capa-card${selectedCapaId === capa.id ? ' capa-card-selected' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedCapaId(capa.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedCapaId(capa.id);
+                      }
+                    }}
+                  >
+                    <div className="capa-card-top">
+                      <div>
+                        <strong>{capa.id}</strong>
+                        <span>{capa.machine} · {capa.defectType}</span>
                       </div>
-                      <p>{capa.issueDescription}</p>
-                      <div className="capa-meta">
-                        <span>Linked NCR: {capa.ncrId}</span>
-                        <span>{capa.percentComplete}% complete</span>
-                      </div>
-                      <div className="capa-actions">
-                        <button type="button" className="btn-secondary" onClick={() => handleCloseCapa(capa.id)} disabled={capa.status === 'Closed'}>
-                          Close CAPA
-                        </button>
-                        {capa.status === 'Closed' ? <span className="capa-closed-copy">Linked NCR closed</span> : null}
-                      </div>
-                    </article>
-                  );
-                })}
+                      <span className={`badge tone-${tone}`}>{capa.status}</span>
+                    </div>
+                    <p>{capa.issueDescription}</p>
+                    <div className="capa-progress-row">
+                      <span>{formatCapaDueDate(capa.dueDate)}</span>
+                      <span>{progress}% complete</span>
+                    </div>
+                    <div className="capa-progress-bar">
+                      <div className="capa-progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="capa-meta">
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setActiveTab('Quality & NCR');
+                          setHighlightedNcr(capa.ncrId);
+                        }}
+                      >
+                        {capa.ncrId} →
+                      </button>
+                      <span>{capa.stageHistory?.length ?? 0} stages</span>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </SectionCard>
         </>
@@ -2458,6 +3307,12 @@ function App() {
     activeAnomalies,
     selectedAnomaly,
     anomalyThresholds,
+    calibrations,
+    calibrationCounts,
+    sortedCalibrations,
+    calibrationSort,
+    selectedCalibrationAssetTag,
+    certModel,
     qualityModel,
     ncrs,
     qualityAnalysisText,
@@ -2565,13 +3420,64 @@ function App() {
             {loading && !payload ? (
               <div className="loading-state">Loading dashboard metrics...</div>
             ) : (
-              tabContent?.[activeTab] ?? (PLACEHOLDER_TABS.has(activeTab) ? <PlaceholderCard tab={activeTab} /> : null)
+              tabContent?.[activeTab] ?? null
             )}
           </main>
         </div>
       </section>
 
+      <button
+        type="button"
+        className="assistant-toggle"
+        onClick={() => setAssistantOpen((current) => !current)}
+        aria-expanded={assistantOpen}
+        aria-controls="assistant-panel"
+      >
+        <ChatIcon />
+        <span>Ask AI</span>
+      </button>
+
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        activeShift={shift}
+        data={payload}
+        ncrs={ncrs}
+        capas={capas}
+        anomalies={anomalies}
+        messages={assistantMessages}
+        onSendMessage={handleAssistantMessage}
+        streaming={assistantStreaming}
+      />
+
       <PressPanel press={selectedPress} onClose={() => setSelectedPress(null)} />
+      <CalibrationPanel
+        instrument={selectedCalibration}
+        onClose={() => setSelectedCalibrationAssetTag(null)}
+        onSchedule={handleScheduleCalibration}
+      />
+      <CertificationPanel
+        employee={certModel.selectedEmployee}
+        onClose={() => setSelectedEmployeeId(null)}
+        onLogTraining={handleLogTraining}
+      />
+      <SupplierPanel
+        supplier={supplierModel.selectedSupplier}
+        onClose={() => setSelectedSupplierId(null)}
+        onStatusChange={handleSupplierStatusChange}
+        onScheduleAudit={handleScheduleAudit}
+      />
+      <CapaPanel
+        capa={capaModel.selectedCapa}
+        onClose={() => setSelectedCapaId(null)}
+        onAdvanceStage={handleAdvanceCapaStage}
+        onToggleAction={handleToggleCapaAction}
+        onOpenSourceNcr={(ncrId) => {
+          setActiveTab('Quality & NCR');
+          setHighlightedNcr(ncrId);
+        }}
+        apiBase={baseUrl}
+      />
       <AnomalyPanel
         anomaly={selectedAnomaly}
         press={selectedAnomaly && payload?.presses ? payload.presses.find((item) => item.pressName === selectedAnomaly.machine) ?? null : null}
@@ -2591,6 +3497,108 @@ function App() {
         onClose={() => setSelectedOrder(null)}
       />
       {toastMessage ? <div className="toast-notification">{toastMessage}</div> : null}
+      {calibrationModalOpen ? (
+        <div className="modal-overlay" onClick={() => setCalibrationModalOpen(false)}>
+          <div className="scenario-modal calibration-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <h2>Add Instrument</h2>
+              <button className="panel-close" type="button" onClick={() => setCalibrationModalOpen(false)} aria-label="Close modal">
+                x
+              </button>
+            </div>
+
+            <form
+              className="scenario-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleAddInstrument();
+              }}
+            >
+              <label className="scenario-field">
+                <span>Asset Tag</span>
+                <input
+                  type="text"
+                  value={calibrationForm.assetTag}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, assetTag: event.target.value }))}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={calibrationForm.name}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, name: event.target.value }))}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Type</span>
+                <select
+                  value={calibrationForm.type}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, type: event.target.value }))}
+                >
+                  <option value="Gauge">Gauge</option>
+                  <option value="Torque Tool">Torque Tool</option>
+                  <option value="Sensor">Sensor</option>
+                  <option value="Vision System">Vision System</option>
+                  <option value="Micrometer">Micrometer</option>
+                  <option value="Thermometer">Thermometer</option>
+                  <option value="Alignment">Alignment</option>
+                  <option value="Timer">Timer</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label className="scenario-field">
+                <span>Location</span>
+                <input
+                  type="text"
+                  value={calibrationForm.location}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, location: event.target.value }))}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Interval Days</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={calibrationForm.intervalDays}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, intervalDays: event.target.value }))}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Last Calibrated</span>
+                <input
+                  type="date"
+                  value={calibrationForm.lastCalibrated}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, lastCalibrated: event.target.value }))}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Performed By</span>
+                <input
+                  type="text"
+                  value={calibrationForm.calibratedBy}
+                  onChange={(event) => setCalibrationForm((current) => ({ ...current, calibratedBy: event.target.value }))}
+                  placeholder="Internal QA"
+                />
+              </label>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={
+                  !calibrationForm.assetTag.trim() ||
+                  !calibrationForm.name.trim() ||
+                  !calibrationForm.location.trim() ||
+                  !calibrationForm.lastCalibrated ||
+                  !calibrationForm.intervalDays
+                }
+              >
+                Add Instrument
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
       {ncrModalOpen && payload ? (
         <div className="modal-overlay" onClick={() => setNcrModalOpen(false)}>
           <div className="scenario-modal quality-modal" onClick={(event) => event.stopPropagation()}>
