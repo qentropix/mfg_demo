@@ -1028,6 +1028,20 @@ export function getDemoDashboard(shiftName = 'Shift A') {
   return copy;
 }
 
+export function removeDemoAlert(shiftName = 'Shift A', alertId) {
+  const dashboard = demoByShift[shiftName] ?? demoByShift['Shift A'];
+  const idNumber = Number(alertId);
+  if (!Number.isFinite(idNumber)) return false;
+
+  const beforeLength = dashboard.alerts.length;
+  dashboard.alerts = dashboard.alerts.filter((alert, index) => {
+    const currentId = Number.isFinite(alert.id) ? alert.id : index + 1;
+    return currentId !== idNumber;
+  });
+
+  return dashboard.alerts.length !== beforeLength;
+}
+
 export function getShiftOptions() {
   return Object.keys(demoByShift);
 }

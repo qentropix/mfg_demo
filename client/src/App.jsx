@@ -4,11 +4,14 @@ import { OeeTrendChart, DowntimeParetoChart } from './Charts.jsx';
 import PressPanel from './PressPanel.jsx';
 import OrderPanel from './OrderPanel.jsx';
 import AnomalyPanel from './AnomalyPanel.jsx';
+import AlertPanel from './AlertPanel.jsx';
 import CalibrationPanel from './CalibrationPanel.jsx';
 import CertificationPanel from './CertificationPanel.jsx';
 import SupplierPanel from './SupplierPanel.jsx';
 import CapaPanel from './CapaPanel.jsx';
 import AssistantPanel from './AssistantPanel.jsx';
+
+const appLogoUrl = new URL('../../assets/favicon.svg', import.meta.url).href;
 
 const shiftTabs = ['Shift A', 'Shift B'];
 const navSections = [
@@ -243,9 +246,9 @@ function SupplyScenarioModal({ open, value, loading, onChange, onClose, onRun })
   );
 }
 
-function SectionCard({ title, subtitle, badge, children }) {
+function SectionCard({ title, subtitle, badge, className = '', children }) {
   return (
-    <article className="section-card">
+    <article className={`section-card${className ? ` ${className}` : ''}`}>
       <div className="section-card-header">
         <div>
           <h3>{title}</h3>
@@ -424,6 +427,7 @@ function App() {
   const [isAlertBannerVisible, setIsAlertBannerVisible] = useState(true);
   const [selectedPress, setSelectedPress] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedAlertId, setSelectedAlertId] = useState(null);
   const [criticalDismissed, setCriticalDismissed] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [scenarioValue, setScenarioValue] = useState('');
@@ -443,6 +447,10 @@ function App() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   const [calibrations, setCalibrations] = useState([]);
   const [selectedCalibrationAssetTag, setSelectedCalibrationAssetTag] = useState(null);
+  const [calibrationStatusFilter, setCalibrationStatusFilter] = useState('All');
+  const [calibrationSearch, setCalibrationSearch] = useState('');
+  const [calibrationTypeFilter, setCalibrationTypeFilter] = useState('All');
+  const [calibrationDrawerOpen, setCalibrationDrawerOpen] = useState(false);
   const [calibrationSort, setCalibrationSort] = useState({ field: 'nextDue', dir: 'asc' });
   const [calibrationModalOpen, setCalibrationModalOpen] = useState(false);
   const [calibrationForm, setCalibrationForm] = useState({
@@ -612,7 +620,7 @@ function App() {
 
       if (response.status === 503) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || 'Operations Assistant is not configured. Please set ANTHROPIC_API_KEY on the server.');
+        throw new Error(payload?.error || 'Operations Assistant is currently unavailable.');
       }
 
       if (!response.ok || !response.body) {
@@ -639,8 +647,8 @@ function App() {
         {
           role: 'assistant',
           content:
-            error.message === 'ANTHROPIC_API_KEY not configured' || error.message.includes('not configured')
-              ? 'Operations Assistant is not configured. Please set ANTHROPIC_API_KEY on the server.'
+            error.message === 'AI not configured' || error.message.includes('unavailable')
+              ? 'Operations Assistant is currently unavailable.'
               : error.message
         }
       ]);
@@ -784,6 +792,18 @@ function App() {
   }, [calibrations, selectedCalibrationAssetTag]);
 
   useEffect(() => {
+    if (!calibrationDrawerOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setCalibrationDrawerOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [calibrationDrawerOpen]);
+
+  useEffect(() => {
     if (!payload?.presses?.length) return undefined;
 
     const now = Date.now();
@@ -924,7 +944,7 @@ function App() {
 
       if (!response.ok) {
         if (response.status === 503) {
-          setReportText('Shift report is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          setReportText('Shift report is currently unavailable.');
           return;
         }
         throw new Error(`Request failed with status ${response.status}`);
@@ -1045,6 +1065,7 @@ function App() {
   }, [payload, oeeAnim, outputAnim, targetOutput, partsAnim, dtAnim, alertAnim]);
 
   const topAlert = payload?.alerts?.[0] ?? null;
+  const selectedAlert = payload?.alerts?.find((alert) => alert.id === selectedAlertId) ?? null;
 
   const qualityModel = useMemo(() => {
     const summary = payload?.summary ?? {};
@@ -1108,8 +1129,30 @@ function App() {
     [calibrations]
   );
 
+  const calibrationGroups = useMemo(
+    () => ({
+      All: calibrations,
+      Current: calibrations.filter((instrument) => instrument.status === 'Current'),
+      'Due Soon': calibrations.filter((instrument) => instrument.status === 'Due Soon'),
+      Overdue: calibrations.filter((instrument) => instrument.status === 'Overdue')
+    }),
+    [calibrations]
+  );
+
   const sortedCalibrations = useMemo(() => {
-    const sorted = [...calibrations].sort((a, b) => {
+    const search = calibrationSearch.trim().toLowerCase();
+    const filtered = calibrations.filter((instrument) => {
+      const statusMatches = calibrationStatusFilter === 'All' || instrument.status === calibrationStatusFilter;
+      const typeMatches = calibrationTypeFilter === 'All' || instrument.type === calibrationTypeFilter;
+      const queryMatches =
+        !search ||
+        [instrument.assetTag, instrument.name, instrument.type, instrument.location, instrument.certNumber, instrument.calibratedBy]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(search));
+      return statusMatches && typeMatches && queryMatches;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
       const { field, dir } = calibrationSort;
       const valueA = a[field];
       const valueB = b[field];
@@ -1126,7 +1169,18 @@ function App() {
     });
 
     return sorted;
-  }, [calibrationSort, calibrations]);
+  }, [calibrationSort, calibrations, calibrationSearch, calibrationStatusFilter, calibrationTypeFilter]);
+
+  const calibrationTypes = useMemo(
+    () => [...new Set(calibrations.map((instrument) => instrument.type))].sort(),
+    [calibrations]
+  );
+
+  const calibrationDrawerInstruments = calibrationGroups[calibrationStatusFilter] ?? [];
+  const openCalibrationDrawer = (status) => {
+    setCalibrationStatusFilter(status);
+    setCalibrationDrawerOpen(true);
+  };
 
   const selectedCalibration =
     calibrations.find((instrument) => instrument.assetTag === selectedCalibrationAssetTag) ?? null;
@@ -1352,7 +1406,7 @@ function App() {
 
       if (!response.ok) {
         if (response.status === 503) {
-          setScenarioResult('AI not configured. Set ANTHROPIC_API_KEY on the server.');
+          setScenarioResult('AI is currently unavailable.');
           return;
         }
         throw new Error(`Request failed with status ${response.status}`);
@@ -1413,6 +1467,41 @@ function App() {
     setSelectedAnomalyId(null);
   };
 
+  const handleDeleteAlert = async (alert) => {
+    if (!alert) return;
+
+    const previousAlerts = payload?.alerts ?? [];
+    setPayload((current) =>
+      current
+        ? { ...current, alerts: (current.alerts ?? []).filter((item) => item.id !== alert.id) }
+        : current
+    );
+    setSelectedAlertId((current) => (current === alert.id ? null : current));
+
+    try {
+      const response = await fetch(
+        `${baseUrl}api/alerts/${encodeURIComponent(alert.id)}?shift=${encodeURIComponent(shift)}`,
+        {
+          method: 'DELETE'
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const data = await response.json().catch(() => null);
+      if (data?.dashboard) {
+        setPayload(data.dashboard);
+      }
+      setToastMessage('Alert deleted.');
+    } catch (error) {
+      setPayload((current) => (current ? { ...current, alerts: previousAlerts } : current));
+      setSelectedAlertId(alert.id);
+      setError(error.message);
+    }
+  };
+
   const runOptimizer = async () => {
     if (optimizerLoading || !payload) return;
 
@@ -1434,7 +1523,7 @@ function App() {
 
       if (!response.ok) {
         if (response.status === 503) {
-          setOptimizerResult('Shift optimizer is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          setOptimizerResult('Shift optimizer is currently unavailable.');
           return;
         }
         throw new Error(`Request failed with status ${response.status}`);
@@ -1479,7 +1568,7 @@ function App() {
 
       if (!response.ok) {
         if (response.status === 503) {
-          setQualityAnalysisText('Quality analysis is not configured. Please set ANTHROPIC_API_KEY on the server.');
+          setQualityAnalysisText('Quality analysis is currently unavailable.');
           return;
         }
         throw new Error(`Request failed with status ${response.status}`);
@@ -1766,6 +1855,12 @@ function App() {
     return () => window.clearTimeout(timeoutId);
   }, [topAlert?.title, topAlert?.createdAt, shift, activeTab]);
 
+  useEffect(() => {
+    if (selectedAlertId && !selectedAlert) {
+      setSelectedAlertId(null);
+    }
+  }, [selectedAlert, selectedAlertId]);
+
   const tabContent = useMemo(() => {
     if (!payload) return null;
 
@@ -1962,7 +2057,11 @@ function App() {
               );
             })}
           </section>
-          <SectionCard title="Maintenance Notes" subtitle="Simple demo log for the current shift">
+          <SectionCard
+            title="Maintenance Notes"
+            subtitle="Simple demo log for the current shift"
+            className="maintenance-notes-card"
+          >
             <div className="note-list">
               {pressWarnings.map((press) => (
                 <div key={press.pressName} className="note-row">
@@ -2094,15 +2193,8 @@ function App() {
       ),
       Workforce: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Shift Coverage" subtitle="Current roster health and machine readiness" badge="Live">
+            <SectionCard title="Shift Coverage" subtitle="Current roster health and machine readiness">
               <div className="workforce-summary-grid">
                 <article className="workforce-summary-card">
                   <span>Total Operators</span>
@@ -2123,7 +2215,7 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Coverage Gaps" subtitle="Absent operators and expired machine certifications" badge="Live">
+            <SectionCard title="Coverage Gaps" subtitle="Absent operators and expired machine certifications">
               <div className="workforce-alert-stack">
                 {workforceModel.coverageGapEmployees.map((employee) => {
                   const machineCert = employee.certifications.find((cert) =>
@@ -2176,7 +2268,11 @@ function App() {
             </SectionCard>
           </section>
 
-          <SectionCard title="Shift Roster" subtitle="Employees, assignments, and current readiness" badge="Live">
+          <SectionCard
+            title="Shift Roster"
+            subtitle="Employees, assignments, and current readiness"
+            className="shift-roster-card"
+          >
             <div className="roster-grid">
               {workforceModel.employees.map((employee) => {
                 const tone = employeeStatusTone(employee.shiftStatus);
@@ -2211,7 +2307,7 @@ function App() {
           </SectionCard>
 
           <section className="tab-grid tab-grid-2 workforce-bottom-grid">
-            <SectionCard title="Operator Performance" subtitle="Machine output mapped to active employees" badge="Live">
+            <SectionCard title="Operator Performance" subtitle="Machine output mapped to active employees">
               <div className="table-scroll">
                 <table className="workforce-table">
                   <thead>
@@ -2269,7 +2365,7 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="AI Shift Optimizer" subtitle="Coverage gaps and reassignment recommendations" badge="Live">
+            <SectionCard title="AI Shift Optimizer" subtitle="Coverage gaps and reassignment recommendations">
               <div className="optimizer-panel">
                 <p className="workforce-note">
                   Analyze the current roster against machine status and ask for a targeted coverage recommendation.
@@ -2293,15 +2389,8 @@ function App() {
       ),
       'Quality & NCR': (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Quality Snapshot" subtitle="Yield, scrap, and inspection performance this shift" badge="Live">
+            <SectionCard title="Quality Snapshot" subtitle="Yield, scrap, and inspection performance this shift">
               <div className="quality-grid">
                 {qualityModel.metrics.map((metric) => (
                   <article key={metric.title} className="quality-item">
@@ -2323,7 +2412,7 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="AI Quality Analysis" subtitle="Summarize the highest risk machine and current defect trend" badge="Live">
+            <SectionCard title="AI Quality Analysis" subtitle="Summarize the highest risk machine and current defect trend">
               <div className="analysis-actions">
                 <button type="button" className="btn-primary" onClick={runQualityAnalysis} disabled={qualityAnalysisLoading}>
                   {qualityAnalysisLoading ? 'Analyzing...' : 'Run Quality Analysis'}
@@ -2345,7 +2434,11 @@ function App() {
           </section>
 
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Defect Themes" subtitle="Current defect counts and movement versus the previous shift" badge="Live">
+            <SectionCard
+              title="Defect Themes"
+              subtitle="Current defect counts and movement versus the previous shift"
+              className="defect-themes-card"
+            >
               <div className="defect-list">
                 {qualityModel.defectRows.map((defect) => (
                   <article key={defect.type} className="defect-row">
@@ -2368,7 +2461,11 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="NCR Register" subtitle="Current nonconformance records for the active shift" badge="Live">
+            <SectionCard
+              title="NCR Register"
+              subtitle="Current nonconformance records for the active shift"
+              className="ncr-register-card"
+            >
               <div className="ncr-toolbar">
                 <button type="button" className="btn-secondary" onClick={() => setNcrModalOpen(true)}>
                   Raise NCR
@@ -2414,42 +2511,53 @@ function App() {
       ),
       Calibration: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
-          <section className="stat-grid calibration-stats">
-            <article className="stat-card tone-cyan">
-              <div className="stat-head">
-                <span>Total</span>
-              </div>
-              <div className="stat-value">{calibrationCounts.total}</div>
-              <div className="stat-delta">Instruments tracked</div>
-            </article>
-            <article className="stat-card tone-success">
-              <div className="stat-head">
-                <span>Current</span>
-              </div>
-              <div className="stat-value">{calibrationCounts.current}</div>
-              <div className="stat-delta">Within interval</div>
-            </article>
-            <article className="stat-card tone-warning">
-              <div className="stat-head">
-                <span>Due Soon</span>
-              </div>
-              <div className="stat-value">{calibrationCounts.dueSoon}</div>
-              <div className="stat-delta">Within 30 days</div>
-            </article>
-            <article className="stat-card tone-danger">
-              <div className="stat-head">
-                <span>Overdue</span>
-              </div>
-              <div className="stat-value">{calibrationCounts.overdue}</div>
-              <div className="stat-delta">Needs immediate action</div>
-            </article>
+          <section className="stat-grid calibration-stats calibration-summary-grid">
+            {[
+              {
+                key: 'All',
+                label: 'Total',
+                count: calibrationCounts.total,
+                note: 'Instruments tracked',
+                tone: 'cyan'
+              },
+              {
+                key: 'Current',
+                label: 'Current',
+                count: calibrationCounts.current,
+                note: 'Within interval',
+                tone: 'success'
+              },
+              {
+                key: 'Due Soon',
+                label: 'Due Soon',
+                count: calibrationCounts.dueSoon,
+                note: 'Within 30 days',
+                tone: 'warning'
+              },
+              {
+                key: 'Overdue',
+                label: 'Overdue',
+                count: calibrationCounts.overdue,
+                note: 'Needs immediate action',
+                tone: 'danger'
+              }
+            ].map((card) => (
+              <button
+                key={card.key}
+                type="button"
+                className={`stat-card tone-${card.tone} calibration-summary-card${calibrationStatusFilter === card.key ? ' active' : ''}`}
+                onClick={() => openCalibrationDrawer(card.key)}
+              >
+                <div className="stat-head">
+                  <span>{card.label}</span>
+                </div>
+                <div className="stat-value">{card.count}</div>
+                <div className="stat-delta">{card.note}</div>
+                <div className="calibration-preview-list">
+                  <span className="calibration-preview-chip">Open list</span>
+                </div>
+              </button>
+            ))}
           </section>
 
           <section className="section-card calibration-panel-shell">
@@ -2458,10 +2566,49 @@ function App() {
                 <h3>Calibration Register</h3>
                 <p>Sort by any column and open a calibration record for details.</p>
               </div>
-              <button type="button" className="btn-primary" onClick={() => setCalibrationModalOpen(true)}>
-                + Add Instrument
-              </button>
+              <div className="calibration-toolbar">
+                <button type="button" className="btn-primary" onClick={() => setCalibrationModalOpen(true)}>
+                  + Add Instrument
+                </button>
+              </div>
             </div>
+            <div className="calibration-filter-bar">
+              <label className="scenario-field calibration-search-field">
+                <span>Search</span>
+                <input
+                  type="search"
+                  value={calibrationSearch}
+                  onChange={(event) => setCalibrationSearch(event.target.value)}
+                  placeholder="Asset tag, instrument, location..."
+                />
+              </label>
+              <label className="scenario-field calibration-type-field">
+                <span>Type</span>
+                <select value={calibrationTypeFilter} onChange={(event) => setCalibrationTypeFilter(event.target.value)}>
+                  <option value="All">All types</option>
+                  {calibrationTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="calibration-filter-chips">
+                {['All', 'Current', 'Due Soon', 'Overdue'].map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className={`calibration-filter-chip${calibrationStatusFilter === status ? ' active' : ''}`}
+                    onClick={() => setCalibrationStatusFilter(status)}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+                <div className="calibration-filter-summary">
+                  Showing {sortedCalibrations.length} of {calibrations.length}
+                </div>
+              </div>
             <div className="table-scroll">
               <table className="calibration-table">
                 <thead>
@@ -2525,13 +2672,6 @@ function App() {
       ),
       Certifications: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="section-card">
             <div className="section-card-header">
               <div>
@@ -2560,7 +2700,11 @@ function App() {
           </section>
 
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Coverage Gap Alerts" subtitle="Expired machine certifications that create a staffing gap" badge="Live">
+            <SectionCard
+              title="Coverage Gap Alerts"
+              subtitle="Expired machine certifications that create a staffing gap"
+              className="coverage-gap-alerts-card"
+            >
               <div className="workforce-alert-stack">
                 {certModel.coverageGaps.map((employee) => {
                   const machineCert = employee.certifications.find((cert) =>
@@ -2590,7 +2734,11 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Employee Certification Matrix" subtitle="Click a row to inspect and log new training" badge="Live">
+            <SectionCard
+              title="Employee Certification Matrix"
+              subtitle="Click a row to inspect and log new training"
+              className="cert-matrix-card"
+            >
               <div className="table-scroll">
                 <table className="cert-table">
                   <thead>
@@ -2636,13 +2784,6 @@ function App() {
       ),
       Suppliers: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="section-card">
             <div className="section-card-header">
               <div>
@@ -2730,13 +2871,6 @@ function App() {
       ),
       CAPA: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="section-card">
             <div className="section-card-header">
               <div>
@@ -2768,7 +2902,11 @@ function App() {
             </div>
           </section>
 
-          <SectionCard title="CAPA Register" subtitle="Click a record to inspect the stage workflow and root cause work" badge="Live">
+          <SectionCard
+            title="CAPA Register"
+            subtitle="Click a record to inspect the stage workflow and root cause work"
+            className="capa-register-card"
+          >
             <div className="capa-list">
               {capaModel.sortedCapas.map((capa) => {
                 const tone = getCapaStatusTone(capa.status);
@@ -2825,15 +2963,8 @@ function App() {
       ),
       'Anomaly Detector': (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Detection Summary" subtitle="Rules are watching current machine behavior" badge="Live">
+            <SectionCard title="Detection Summary" subtitle="Rules are watching current machine behavior">
               <div className="quality-grid anomaly-summary-grid">
                 <article className="quality-item">
                   <span>Active</span>
@@ -2857,7 +2988,7 @@ function App() {
               </p>
             </SectionCard>
 
-            <SectionCard title="Selected Anomaly" subtitle="Open a machine to inspect details and get AI diagnosis" badge="Live">
+            <SectionCard title="Selected Anomaly" subtitle="Open a machine to inspect details and get AI diagnosis">
               {selectedAnomaly ? (
                 <div className="selected-anomaly-card">
                   <div className="selected-anomaly-head">
@@ -2888,7 +3019,11 @@ function App() {
             </SectionCard>
           </section>
 
-          <SectionCard title="Active Anomalies" subtitle="Current anomaly queue across the machine fleet" badge="Live">
+          <SectionCard
+            title="Active Anomalies"
+            subtitle="Current anomaly queue across the machine fleet"
+            className="active-anomalies-card"
+          >
             <div className="anomaly-list">
               {activeAnomalies.length > 0 ? (
                 activeAnomalies.map((anomaly) => (
@@ -2922,7 +3057,11 @@ function App() {
           </SectionCard>
 
           {anomalies.some((item) => item.resolved) ? (
-            <SectionCard title="Resolved Anomalies" subtitle="Fading items are removed after a short delay" badge="Live">
+            <SectionCard
+              title="Resolved Anomalies"
+              subtitle="Fading items are removed after a short delay"
+              className="resolved-anomalies-card"
+            >
               <div className="anomaly-list resolved-list">
                 {anomalies
                   .filter((item) => item.resolved)
@@ -2946,11 +3085,8 @@ function App() {
       ),
       Reports: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip"><span className="live-dot" />Live</span>
-          </div>
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Daily Reports" subtitle="Generate and share the current shift handover" badge="Live">
+            <SectionCard title="Daily Reports" subtitle="Generate and share the current shift handover">
               <div className="report-actions">
                 <button type="button" className="btn-primary" onClick={runShiftReport} disabled={reportLoading}>
                   {reportLoading ? 'Generating...' : 'Generate Shift Report'}
@@ -3003,7 +3139,7 @@ function App() {
                 )}
               </div>
             </SectionCard>
-            <SectionCard title="Audit Trail" subtitle="Example report history" badge="Live">
+            <SectionCard title="Audit Trail" subtitle="Example report history">
               <div className="note-list">
                 {parsedReportSections.length > 0 ? (
                   parsedReportSections.map((section) => (
@@ -3039,24 +3175,30 @@ function App() {
       ),
       Alerts: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip"><span className="live-dot" />Live</span>
-          </div>
           <section className="tab-grid tab-grid-2">
-            <SectionCard title="Open Alerts" subtitle="Sorted by severity for the current shift" badge="Live">
+            <SectionCard
+              title="Open Alerts"
+              subtitle="Sorted by severity for the current shift"
+              className="open-alerts-card"
+            >
               <div className="alerts-list single-column">
                 {payload.alerts.map((alert) => (
-                  <article key={`${alert.title}-${alert.createdAt}`} className={`alert-card tone-${alert.severity}`}>
+                  <button
+                    key={alert.id}
+                    type="button"
+                    className={`alert-card alert-card-button tone-${alert.severity}${selectedAlertId === alert.id ? ' active' : ''}`}
+                    onClick={() => setSelectedAlertId(alert.id)}
+                  >
                     <div className="alert-head">
                       <strong>{alert.title}</strong>
                       <span>{alert.createdAt}</span>
                     </div>
                     <p>{alert.message}</p>
-                  </article>
+                  </button>
                 ))}
               </div>
             </SectionCard>
-            <SectionCard title="Escalation Rules" subtitle="Demo workflow for the alert queue" badge="Live">
+            <SectionCard title="Escalation Rules" subtitle="Demo workflow for the alert queue">
               <div className="note-list">
                 <div className="note-row">
                   <strong>Critical</strong>
@@ -3077,9 +3219,6 @@ function App() {
       ),
       Settings: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip"><span className="live-dot" />Live</span>
-          </div>
           <section className="section-card">
             <div className="section-card-header">
               <div>
@@ -3177,7 +3316,7 @@ function App() {
           </section>
 
           <section className="tab-grid tab-grid-3 integrations-layout">
-            <SectionCard title="Last Sync" subtitle="Recent integration activity and freshness" badge="Live">
+            <SectionCard title="Last Sync" subtitle="Recent integration activity and freshness">
               <div className="sync-log">
                 {syncLog.map((entry) => (
                   <div key={entry.system} className="sync-row">
@@ -3196,7 +3335,7 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Data Flow" subtitle="Where operational data moves between systems" badge="Live">
+            <SectionCard title="Data Flow" subtitle="Where operational data moves between systems">
               <div className="data-flow">
                 <div className="flow-col">
                   <h4>Sources</h4>
@@ -3223,7 +3362,7 @@ function App() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Profile & Preferences" subtitle="Demo configuration controls and account details" badge="Live">
+            <SectionCard title="Profile & Preferences" subtitle="Demo configuration controls and account details">
               <div className="settings-list">
                 <label className="settings-row">
                   <span>Auto-refresh dashboard</span>
@@ -3333,7 +3472,9 @@ function App() {
       <section className="dashboard-panel">
         <div className="dashboard-frame">
           <aside className="sidebar">
-            <div className="sidebar-logo">Q</div>
+            <div className="sidebar-logo" aria-label="Qentropix logo">
+              <img src={appLogoUrl} alt="" aria-hidden="true" />
+            </div>
             <nav className="sidebar-nav">
               {navSections.map((section) => (
                 <div key={section.label} className="sidebar-section">
@@ -3453,6 +3594,63 @@ function App() {
         streaming={assistantStreaming}
       />
 
+      <div
+        className={`calibration-drawer-backdrop${calibrationDrawerOpen ? ' open' : ''}`}
+        onClick={() => setCalibrationDrawerOpen(false)}
+      >
+        <aside className="calibration-drawer" onClick={(event) => event.stopPropagation()}>
+          <button
+            className="panel-close"
+            type="button"
+            onClick={() => setCalibrationDrawerOpen(false)}
+            aria-label="Close calibration drawer"
+          >
+            x
+          </button>
+
+          <div className="calibration-drawer-header">
+            <div>
+              <h3>{calibrationStatusFilter === 'All' ? 'All Instruments' : `${calibrationStatusFilter} Instruments`}</h3>
+              <p>{calibrationDrawerInstruments.length} instrument(s) in this list</p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setCalibrationStatusFilter('All');
+                setCalibrationDrawerOpen(false);
+              }}
+            >
+              Show All
+            </button>
+          </div>
+
+          <div className="calibration-drawer-list">
+            {calibrationDrawerInstruments.length > 0 ? (
+              calibrationDrawerInstruments.map((instrument) => (
+                <button
+                  key={instrument.assetTag}
+                  type="button"
+                  className={`calibration-drawer-item${selectedCalibrationAssetTag === instrument.assetTag ? ' active' : ''}`}
+                  onClick={() => setSelectedCalibrationAssetTag(instrument.assetTag)}
+                >
+                  <strong>{instrument.assetTag}</strong>
+                  <span>{instrument.name}</span>
+                  <small>
+                    {instrument.location} · {instrument.type} · {instrument.status}
+                  </small>
+                </button>
+              ))
+            ) : (
+              <div className="note-row">
+                <strong>No instruments in this group</strong>
+                <span>Try another calibration status filter.</span>
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+
       <PressPanel press={selectedPress} onClose={() => setSelectedPress(null)} />
       <CalibrationPanel
         instrument={selectedCalibration}
@@ -3488,6 +3686,11 @@ function App() {
         onClose={() => setSelectedAnomalyId(null)}
         onCreateAlert={handleCreateAnomalyAlert}
         onDismiss={handleDismissAnomaly}
+      />
+      <AlertPanel
+        alert={selectedAlert}
+        onClose={() => setSelectedAlertId(null)}
+        onDelete={handleDeleteAlert}
       />
       <OrderPanel
         order={selectedOrder}

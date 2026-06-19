@@ -10,6 +10,7 @@ import {
   createNcr,
   getDashboardPayload,
   getShifts,
+  deleteAlert,
   listAlerts,
   listCapas,
   listNcrs,
@@ -545,6 +546,28 @@ app.post('/api/alerts', async (request, response) => {
     const dashboard = await getDashboardPayload(shiftName);
     broadcastDashboardUpdate(shiftName);
     response.status(201).json({ message: 'Alert created successfully.', alert, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.delete('/api/alerts/:id', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  const alertId = Number(request.params.id);
+
+  if (!Number.isFinite(alertId)) {
+    return sendError(response, 400, 'Invalid alert id.');
+  }
+
+  try {
+    const deleted = await deleteAlert(shiftName, alertId);
+    if (!deleted) {
+      return sendError(response, 404, 'Alert not found for the given shift.');
+    }
+
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.json({ message: 'Alert deleted successfully.', alert: deleted, dashboard });
   } catch (error) {
     sendError(response, 400, error.message);
   }

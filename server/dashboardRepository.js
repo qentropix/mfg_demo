@@ -6,6 +6,7 @@ import {
   getBaseDemoDashboard,
   getDemoDashboard,
   getShiftOptions,
+  removeDemoAlert,
   suppliers
 } from './demoData.js';
 
@@ -120,7 +121,13 @@ function getShiftFallback(shiftName) {
     presses: demo.presses,
     downtime: demo.downtime,
     oeeTrend: demo.oeeTrend,
-    alerts: demo.alerts,
+      alerts: demo.alerts.map((alert, index) => ({
+        id: Number.isFinite(alert.id) ? alert.id : index + 1,
+        severity: alert.severity,
+        title: alert.title,
+        message: alert.message,
+        createdAt: alert.createdAt
+      })),
     orders: demo.orders,
     materials: demo.materials,
     defects: demo.defects,
@@ -171,7 +178,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
         [shiftName]
       ),
       pool.query(
-        `select severity, title, message, created_at
+        `select id, severity, title, message, created_at
          from alerts
          where shift_name = $1 and is_active = true
          order by
@@ -228,6 +235,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
         value: toNumber(row.value)
       })),
       alerts: alertsResult.rows.map((row) => ({
+        id: Number(row.id),
         severity: row.severity,
         title: row.title,
         message: row.message,
@@ -484,6 +492,31 @@ export async function createAlert(shiftName, alert) {
 
   await refreshAlertCounts(shiftName);
   return mapAlertRow(result.rows[0]);
+}
+
+export async function deleteAlert(shiftName, alertId) {
+  if (!pool) {
+    const removed = removeDemoAlert(shiftName, alertId);
+    if (!removed) {
+      return null;
+    }
+    return { id: Number(alertId), deleted: true };
+  }
+
+  const result = await pool.query(
+    `update alerts
+     set is_active = false
+     where shift_name = $1 and id = $2
+     returning id`,
+    [shiftName, alertId]
+  );
+
+  if (!result.rowCount) {
+    return null;
+  }
+
+  await refreshAlertCounts(shiftName);
+  return { id: Number(result.rows[0].id), deleted: true };
 }
 
 export async function resetShift(shiftName = null) {
