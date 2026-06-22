@@ -1881,15 +1881,6 @@ function App() {
     return {
       Dashboard: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-              <span className="live-separator">|</span>
-              <span className="freshness-label">Updated {freshnessSeconds}s ago</span>
-            </span>
-          </div>
-
           <div className="shift-comparison-bar" role="tablist" aria-label="Shift comparison">
             {shiftComparisonEntries.map(({ shift: item, value }) => (
               <button
@@ -2000,13 +1991,6 @@ function App() {
       ),
       'Production & Orders': (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           <section className="order-board">
             {(payload.orders ?? []).map((order) => {
               const press = payload.presses.find((item) => item.pressName === order.machineAssigned);
@@ -2025,9 +2009,6 @@ function App() {
       ),
       Machines: (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip"><span className="live-dot" />Live</span>
-          </div>
           <section className="tab-grid tab-grid-3">
             {payload.presses.map((press) => {
               const tone = statusTone(press.status);
@@ -2075,13 +2056,6 @@ function App() {
       ),
       'Supply Chain': (
         <>
-          <div className="tab-live-row">
-            <span className="live-chip">
-              <span className="live-dot" />
-              Live
-            </span>
-          </div>
-
           {!criticalDismissed && criticalMaterials.length > 0 ? (
             <div className="alert-banner tone-warning supply-banner" role="status" aria-live="polite">
               <div className="alert-banner-body">
@@ -3272,46 +3246,6 @@ function App() {
                   }
                 />
               </label>
-            </div>
-          </section>
-
-          <section className="section-card integrations-panel">
-            <div className="section-card-header">
-              <div>
-                <h3>Connected Systems</h3>
-                <p>Integration coverage across ERP, MES, PLCs, and adjacent business systems.</p>
-              </div>
-            </div>
-
-            <div className="integrations-grid">
-              {integrations.map((integration) => (
-                <article key={integration.name} className="integration-card">
-                  <div className="integration-card-top">
-                    <span className="integration-icon">{integration.icon}</span>
-                    <div>
-                      <h4>{integration.name}</h4>
-                      <p>{integration.platforms}</p>
-                    </div>
-                    <span className={`integration-badge tone-${integrationTone(integration.status)}`}>
-                      {integration.status}
-                    </span>
-                  </div>
-                  <p className="integration-detail">{integration.detail}</p>
-                  {integration.status === 'Available' ? (
-                    <button
-                      type="button"
-                      className="integration-request"
-                      onClick={() => {
-                        setRequestSystem(integration.name);
-                        setRequestText('');
-                        setRequestModalOpen(true);
-                      }}
-                    >
-                      Request Integration
-                    </button>
-                  ) : null}
-                </article>
-              ))}
             </div>
           </section>
 

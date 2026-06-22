@@ -1,10 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-
-function ringStyle(value, color) {
-  return {
-    background: `conic-gradient(${color} ${Math.max(value, 0) * 3.6}deg, rgba(255,255,255,0.08) 0deg)`
-  };
-}
+import { useEffect, useState } from 'react';
 
 function toneForStatus(status) {
   if (status === 'Overdue') return 'danger';
@@ -136,9 +130,7 @@ export default function CalibrationPanel({ instrument, onClose, onSchedule }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [instrument, onClose]);
 
-  const tone = useMemo(() => toneForStatus(instrument?.status ?? 'Current'), [instrument]);
-  const toneColor =
-    tone === 'danger' ? 'var(--danger)' : tone === 'warning' ? 'var(--warning)' : 'var(--success)';
+  const tone = toneForStatus(instrument?.status ?? 'Current');
 
   if (!instrument) return null;
 
@@ -157,14 +149,15 @@ export default function CalibrationPanel({ instrument, onClose, onSchedule }) {
         </div>
 
         <div className="press-panel-oee-row">
-          <div
-            className="press-panel-ring calibration-ring"
-            style={ringStyle(
-              instrument.status === 'Overdue' ? 95 : instrument.status === 'Due Soon' ? 70 : 30,
-              toneColor
-            )}
-            data-value={instrument.status === 'Overdue' ? '!' : instrument.status === 'Due Soon' ? '30' : 'OK'}
-          />
+          <div className={`calibration-status-card tone-${tone}`}>
+            <span>Status</span>
+            <strong>{instrument.status}</strong>
+            <small>{instrument.status === 'Overdue'
+              ? 'Calibration needs immediate attention'
+              : instrument.status === 'Due Soon'
+                ? 'Calibration window is approaching'
+                : 'Calibration is current and valid'}</small>
+          </div>
           <div className="press-panel-kpis">
             <div className="press-panel-kpi">
               <span>Type</span>
