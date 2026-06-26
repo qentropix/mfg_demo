@@ -397,6 +397,12 @@ function formatRelativeDate(timestamp) {
   return dayRemainder ? `${days}d ${dayRemainder}h ago` : `${days}d ago`;
 }
 
+function getLocalDateInputValue(date = new Date()) {
+  const offsetMinutes = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offsetMinutes * 60000);
+  return localDate.toISOString().slice(0, 10);
+}
+
 function deriveCalibrationStatus(nextDue) {
   if (nextDue < Date.now()) return 'Overdue';
   if (nextDue < Date.now() + 30 * 86400000) return 'Due Soon';
@@ -438,7 +444,16 @@ function App() {
   const [optimizerLoading, setOptimizerLoading] = useState(false);
   const [reportText, setReportText] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
+  const [selectedReportHistoryId, setSelectedReportHistoryId] = useState(null);
+  const [reportDate, setReportDate] = useState(() => getLocalDateInputValue());
   const [reportHistory, setReportHistory] = useState([]);
+  const [historyRangeDays, setHistoryRangeDays] = useState(210);
+  const [historySummary, setHistorySummary] = useState([]);
+  const [historyEvents, setHistoryEvents] = useState([]);
+  const [historyInsights, setHistoryInsights] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [anomalies, setAnomalies] = useState([]);
   const [selectedAnomalyId, setSelectedAnomalyId] = useState(null);
   const anomalyDefaultSelectedRef = useRef(false);
@@ -485,6 +500,13 @@ function App() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState([]);
   const [assistantStreaming, setAssistantStreaming] = useState(false);
+  const [adminAiGaps, setAdminAiGaps] = useState([]);
+  const [adminAiGapsLoading, setAdminAiGapsLoading] = useState(false);
+  const [adminAiGapsError, setAdminAiGapsError] = useState('');
+  const [adminAiGapsStatus, setAdminAiGapsStatus] = useState('all');
+  const [adminAiGapsLimit, setAdminAiGapsLimit] = useState(25);
+  const [adminAiGapSelectedId, setAdminAiGapSelectedId] = useState(null);
+  const [adminAiGapMessage, setAdminAiGapMessage] = useState('');
   const [anomalyThresholds, setAnomalyThresholds] = useState({
     warningOeeDrop: 8,
     criticalOee: 65,
@@ -494,6 +516,50 @@ function App() {
   const lastUpdatedRef = useRef(Date.now());
   const prevOeeRef = useRef({});
   const lowOeeCountRef = useRef({});
+
+  async function loadAdminAiGaps({ analyze = false } = {}) {
+    setAdminAiGapsLoading(true);
+    setAdminAiGapsError('');
+    setAdminAiGapMessage('');
+    try {
+      const url = analyze
+        ? '/api/admin/ai-gaps/analyze'
+        : `/api/admin/ai-gaps?limit=${encodeURIComponent(adminAiGapsLimit)}${adminAiGapsStatus !== 'all' ? `&status=${encodeURIComponent(adminAiGapsStatus)}` : ''}`;
+      const response = await fetch(url, {
+        method: analyze ? 'POST' : 'GET',
+        headers: analyze ? { 'Content-Type': 'application/json' } : undefined,
+        body: analyze ? JSON.stringify({ days: 30, minCount: 2 }) : undefined
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const gaps = analyze ? (payload.gaps ?? []) : (payload.gaps ?? []);
+      setAdminAiGaps(gaps);
+      if (analyze) {
+        setAdminAiGapMessage(`Analyzed ${gaps.length} gap(s) from recent AI failures.`);
+      }
+      if (gaps.length && !adminAiGapSelectedId) {
+        setAdminAiGapSelectedId(gaps[0].id);
+      }
+    } catch (fetchError) {
+      setAdminAiGapsError(fetchError.message);
+    } finally {
+      setAdminAiGapsLoading(false);
+    }
+  }
+
+  const selectedAdminAiGap = adminAiGaps.find((gap) => gap.id === adminAiGapSelectedId) ?? adminAiGaps[0] ?? null;
+  const selectedAdminAiProposal = selectedAdminAiGap?.proposal ?? selectedAdminAiGap?.proposals?.[0]?.patchJson ?? selectedAdminAiGap?.proposals?.[0]?.patch_json ?? null;
+
+  useEffect(() => {
+    if (activeTab === 'Settings' && !adminAiGaps.length && !adminAiGapsLoading) {
+      loadAdminAiGaps().catch(() => {});
+    }
+  }, [activeTab, adminAiGaps.length, adminAiGapsLoading, adminAiGapsLimit, adminAiGapsStatus]);
+
   const integrations = [
     {
       name: 'ERP',
@@ -588,6 +654,7 @@ function App() {
   useEffect(() => {
     setReportText('');
     setReportLoading(false);
+    setSelectedReportHistoryId(null);
   }, [shift]);
 
   useEffect(() => {
@@ -608,7 +675,18 @@ function App() {
 
     const userMsg = { role: 'user', content };
     const nextMessages = [...assistantMessages, userMsg];
-    setAssistantMessages([...nextMessages, { role: 'assistant', content: '' }]);
+    const assistantSeedId = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    setAssistantMessages([
+      ...nextMessages,
+      {
+        role: 'assistant',
+        content: 'Thinking...',
+        requestId: assistantSeedId,
+        prompt: content,
+        activeTab,
+        feedbackSubmitted: false
+      }
+    ]);
     setAssistantStreaming(true);
 
     try {
@@ -627,6 +705,25 @@ function App() {
         throw new Error(`Request failed with status ${response.status}`);
       }
 
+      const requestId = response.headers.get('x-request-id') || assistantSeedId;
+      setAssistantMessages((current) => {
+        const lastMessage = current.at(-1);
+        if (!lastMessage || lastMessage.role !== 'assistant') {
+          return current;
+        }
+
+        return [
+          ...current.slice(0, -1),
+          {
+            ...lastMessage,
+            requestId,
+            prompt: content,
+            activeTab,
+            feedbackSubmitted: Boolean(lastMessage.feedbackSubmitted)
+          }
+        ];
+      });
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let finalText = '';
@@ -638,7 +735,14 @@ function App() {
         finalText += chunk;
         setAssistantMessages((current) => [
           ...current.slice(0, -1),
-          { role: 'assistant', content: finalText }
+          {
+            ...current.at(-1),
+            role: 'assistant',
+            content: finalText,
+            requestId,
+            prompt: content,
+            activeTab
+          }
         ]);
       }
     } catch (error) {
@@ -649,12 +753,73 @@ function App() {
           content:
             error.message === 'AI not configured' || error.message.includes('unavailable')
               ? 'Operations Assistant is currently unavailable.'
-              : error.message
+              : error.message,
+          requestId: assistantSeedId,
+          prompt: content,
+          activeTab,
+          feedbackSubmitted: false
         }
       ]);
     } finally {
       setAssistantStreaming(false);
     }
+  };
+
+  const submitAssistantFeedback = async ({
+    requestId,
+    rating,
+    comment = '',
+    correctAnswer = '',
+    rawQuery = '',
+    source = '',
+    queryType = '',
+    resolvedScope = '',
+    resolvedWindow = '',
+    reaskedOrCorrected = false,
+    activeTab: feedbackTab = activeTab
+  }) => {
+    if (!requestId) {
+      throw new Error('Missing request id for feedback.');
+    }
+
+    const response = await fetch(`${baseUrl}api/ai/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId,
+        rating,
+        comment,
+        correctAnswer,
+        rawQuery,
+        source,
+        queryType,
+        resolvedScope,
+        resolvedWindow,
+        reaskedOrCorrected,
+        shiftName: shift,
+        activeTab: feedbackTab
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    setAssistantMessages((current) =>
+      current.map((message) =>
+        message.requestId === requestId
+          ? {
+              ...message,
+              feedbackSubmitted: true,
+              feedbackRating: rating,
+              feedbackComment: comment,
+              feedbackCorrectAnswer: correctAnswer
+            }
+          : message
+      )
+    );
+
+    setToastMessage('AI feedback sent.');
   };
 
   useEffect(() => {
@@ -934,43 +1099,34 @@ function App() {
 
     setReportLoading(true);
     setReportText('');
+    setSelectedReportHistoryId(null);
 
     try {
-      const response = await fetch(`${baseUrl}api/ai/shift-report`, {
+      const selectedReportDate = reportDate || getLocalDateInputValue();
+      const response = await fetch(`${baseUrl}api/reports/daily`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftName: shift })
+        body: JSON.stringify({
+          shiftName: shift,
+          reportDate: selectedReportDate
+        })
       });
 
       if (!response.ok) {
-        if (response.status === 503) {
-          setReportText('Shift report is currently unavailable.');
-          return;
-        }
-        throw new Error(`Request failed with status ${response.status}`);
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || `Request failed with status ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        setReportText('No streaming response was available.');
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let finalText = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        finalText += chunk;
-        setReportText(finalText);
-      }
+      const payload = await response.json();
+      const finalText = payload.reportText ?? '';
+      setReportText(finalText);
 
       if (finalText.trim()) {
         setReportHistory((current) => [
           {
             id: Date.now(),
             shiftName: shift,
+            reportDate: selectedReportDate,
             generatedAt: new Date().toISOString(),
             text: finalText
           },
@@ -984,6 +1140,52 @@ function App() {
     }
   };
 
+  async function loadHistory(rangeDays = historyRangeDays) {
+    setHistoryLoading(true);
+    setHistoryError('');
+
+    try {
+      const [summaryResponse, eventsResponse, insightsResponse] = await Promise.all([
+        fetch(`/api/history/summary?shift=${encodeURIComponent(shift)}&days=${rangeDays}`),
+        fetch(`/api/history/events?shift=${encodeURIComponent(shift)}&days=${Math.min(rangeDays, 30)}&limit=120`),
+        fetch(`/api/history/insights?shift=${encodeURIComponent(shift)}&days=${rangeDays}`)
+      ]);
+
+      if (!summaryResponse.ok || !eventsResponse.ok || !insightsResponse.ok) {
+        throw new Error('Unable to load history data.');
+      }
+
+      const [summaryPayload, eventsPayload, insightsPayload] = await Promise.all([
+        summaryResponse.json(),
+        eventsResponse.json(),
+        insightsResponse.json()
+      ]);
+
+      setHistorySummary(summaryPayload.summary ?? []);
+      setHistoryEvents(eventsPayload.events ?? []);
+      setHistoryInsights(insightsPayload ?? null);
+      setHistoryRangeDays(rangeDays);
+    } catch (error) {
+      setHistoryError(error.message);
+      setHistorySummary([]);
+      setHistoryEvents([]);
+      setHistoryInsights(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'Reports') {
+      loadHistory(historyRangeDays);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, shift]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [shift, activeTab]);
+
   const handleCopyReport = async () => {
     if (!reportText.trim()) return;
     try {
@@ -994,8 +1196,16 @@ function App() {
   };
 
   const handleViewReport = (entry) => {
+    setReportLoading(false);
+    setSelectedReportHistoryId(entry.id);
     setReportText(entry.text);
+    if (entry.reportDate) {
+      setReportDate(entry.reportDate);
+    }
     setActiveTab('Reports');
+    window.requestAnimationFrame(() => {
+      document.getElementById('report-card-shell')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const stats = useMemo(() => {
@@ -1059,7 +1269,7 @@ function App() {
         delta: `${payload.summary.criticalAlerts} critical | ${payload.summary.warningAlerts} warning`,
         ring: 72,
         ringColor: '#ffb53f',
-        tone: 'amber'
+      tone: 'amber'
       }
     ];
   }, [payload, oeeAnim, outputAnim, targetOutput, partsAnim, dtAnim, alertAnim]);
@@ -3059,26 +3269,42 @@ function App() {
       ),
       Reports: (
         <>
-          <section className="tab-grid tab-grid-2">
+          <section className="report-stack">
             <SectionCard title="Daily Reports" subtitle="Generate and share the current shift handover">
-              <div className="report-actions">
-                <button type="button" className="btn-primary" onClick={runShiftReport} disabled={reportLoading}>
-                  {reportLoading ? 'Generating...' : 'Generate Shift Report'}
-                </button>
-                <button type="button" className="btn-secondary" onClick={handleCopyReport} disabled={!reportText.trim()}>
-                  Copy to Clipboard
-                </button>
+              <div className="report-controls">
+                <label className="report-date-picker">
+                  <span>Report Date</span>
+                  <input
+                    type="date"
+                    value={reportDate}
+                    onChange={(event) => setReportDate(event.target.value)}
+                    max={getLocalDateInputValue()}
+                  />
+                </label>
+                <div className="report-actions">
+                  <button type="button" className="btn-primary" onClick={runShiftReport} disabled={reportLoading}>
+                    {reportLoading ? 'Generating...' : 'Generate Shift Report'}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={handleCopyReport} disabled={!reportText.trim()}>
+                    Copy to Clipboard
+                  </button>
+                </div>
               </div>
 
-              <div className="report-card-shell">
+              <div className="report-card-shell" id="report-card-shell">
+                {selectedReportHistoryId ? (
+                  <div className="report-view-banner">
+                    Viewing saved report from history
+                  </div>
+                ) : null}
                 {reportLoading ? (
                   <div className="loading-state">Streaming shift report...</div>
                 ) : reportText ? (
                   <ReportCard text={reportText} activeShift={shift} />
                 ) : (
                   <div className="placeholder-card report-placeholder">
-                    <h2>Shift Handover Report</h2>
-                    <p>Generate a formal summary with performance, issues, handover notes, and recommendations.</p>
+                    <h2>Daily Shift Report</h2>
+                    <p>Generate a report for the selected date with performance, issues, handover notes, and recommendations.</p>
                     <span className="badge tone-muted">Not Generated</span>
                   </div>
                 )}
@@ -3097,7 +3323,10 @@ function App() {
                       <div key={entry.id} className="report-history-row">
                         <div>
                           <strong>{entry.shiftName}</strong>
-                          <span>{new Date(entry.generatedAt).toLocaleString()}</span>
+                          <span>
+                            {entry.reportDate ? `Report date: ${entry.reportDate} · ` : ''}
+                            {new Date(entry.generatedAt).toLocaleString()}
+                          </span>
                         </div>
                         <button type="button" className="btn-secondary" onClick={() => handleViewReport(entry)}>
                           View
@@ -3113,38 +3342,59 @@ function App() {
                 )}
               </div>
             </SectionCard>
-            <SectionCard title="Audit Trail" subtitle="Example report history">
-              <div className="note-list">
-                {parsedReportSections.length > 0 ? (
-                  parsedReportSections.map((section) => (
-                    <div key={section.header} className="report-audit-row">
-                      <strong>{section.header}</strong>
-                      <span>{section.body.slice(0, 96) || 'Generated report section'}</span>
+            <SectionCard title="Historical Trends" subtitle="Six to eight months of operational history">
+              <div className="history-toolbar">
+                {[30, 90, 180, 210].map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={`filter-chip ${historyRangeDays === days ? 'active' : ''}`}
+                    onClick={() => loadHistory(days)}
+                  >
+                    {days}d
+                  </button>
+                ))}
+                <button type="button" className="btn-secondary" onClick={() => loadHistory(historyRangeDays)} disabled={historyLoading}>
+                  {historyLoading ? 'Loading...' : 'Refresh History'}
+                </button>
+              </div>
+              {historyError ? <div className="history-error">{historyError}</div> : null}
+              <div className="history-grid">
+                <div className="history-card">
+                  <h4>Operational Insights</h4>
+                  {historyInsights ? (
+                    <div className="history-insight-list">
+                      <div><strong>Average OEE</strong><span>{historyInsights.summary.avgOee?.toFixed?.(1) ?? 'N/A'}%</span></div>
+                      <div><strong>Total Output</strong><span>{Math.round(historyInsights.summary.totalOutput || 0).toLocaleString()}</span></div>
+                      <div><strong>Downtime</strong><span>{Math.round(historyInsights.summary.downtimeMinutes || 0)}m</span></div>
+                      <div><strong>Avg Quality</strong><span>{historyInsights.summary.avgQualityRate?.toFixed?.(1) ?? 'N/A'}%</span></div>
                     </div>
-                  ))
-                ) : (
-                  <>
-                    <div className="note-row">
-                      <strong>Performance Summary</strong>
-                      <span>Generated report section will appear here</span>
+                  ) : (
+                    <p className="muted-copy">Insights appear here once history is loaded.</p>
+                  )}
+                </div>
+                <div className="history-card history-patterns history-patterns-compact">
+                  <h4>Recurring Patterns</h4>
+                  {historyInsights?.eventBreakdown?.length ? (
+                    <div className="history-pattern-list">
+                      {historyInsights.eventBreakdown.slice(0, 4).map((item) => (
+                        <div key={`${item.eventType}-${item.severity}`} className="history-pattern-row">
+                          <div>
+                            <strong>{item.eventType}</strong>
+                            <p>{item.severity}</p>
+                          </div>
+                          <span>{item.count} event{item.count === 1 ? '' : 's'}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="note-row">
-                      <strong>Issues & Actions</strong>
-                      <span>Generated report section will appear here</span>
-                    </div>
-                    <div className="note-row">
-                      <strong>Handover Notes</strong>
-                      <span>Generated report section will appear here</span>
-                    </div>
-                    <div className="note-row">
-                      <strong>Recommendations</strong>
-                      <span>Generated report section will appear here</span>
-                    </div>
-                  </>
-                )}
+                  ) : (
+                    <p className="muted-copy">Pattern breakdown appears once history is loaded.</p>
+                  )}
+                </div>
               </div>
             </SectionCard>
-          </section>
+
+            </section>
         </>
       ),
       Alerts: (
@@ -3185,6 +3435,147 @@ function App() {
                 <div className="note-row">
                   <strong>Info</strong>
                   <span>Log for review during handoff</span>
+                </div>
+              </div>
+            </SectionCard>
+            <SectionCard
+              title="AI Gap Proposals"
+              subtitle="Failure patterns and suggested retrieval updates from recent AI interactions"
+            >
+              <div className="admin-ai-toolbar">
+                <div className="admin-ai-toolbar-group">
+                  <label className="admin-ai-control">
+                    <span>Filter</span>
+                    <select value={adminAiGapsStatus} onChange={(event) => setAdminAiGapsStatus(event.target.value)}>
+                      <option value="all">All</option>
+                      <option value="proposed">Proposed</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                  </label>
+                  <label className="admin-ai-control">
+                    <span>Limit</span>
+                    <select value={adminAiGapsLimit} onChange={(event) => setAdminAiGapsLimit(Number(event.target.value))}>
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="admin-ai-actions">
+                  <button type="button" className="btn-secondary" onClick={() => loadAdminAiGaps()} disabled={adminAiGapsLoading}>
+                    Refresh
+                  </button>
+                  <button type="button" className="btn-primary" onClick={() => loadAdminAiGaps({ analyze: true })} disabled={adminAiGapsLoading}>
+                    Analyze Failures
+                  </button>
+                </div>
+              </div>
+
+              {adminAiGapMessage ? <p className="admin-ai-note">{adminAiGapMessage}</p> : null}
+              {adminAiGapsError ? <p className="admin-ai-error">{adminAiGapsError}</p> : null}
+
+              <div className="admin-ai-grid">
+                <div className="admin-ai-list">
+                  {adminAiGapsLoading ? <div className="admin-ai-empty">Loading gap proposals...</div> : null}
+                  {!adminAiGapsLoading && !adminAiGaps.length ? (
+                    <div className="admin-ai-empty">No AI gaps recorded yet. Run an analysis after collecting failures.</div>
+                  ) : null}
+                  {adminAiGaps.map((gap) => {
+                    const isSelected = gap.id === selectedAdminAiGap?.id;
+                    return (
+                      <button
+                        key={gap.id}
+                        type="button"
+                        className={`admin-ai-gap ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setAdminAiGapSelectedId(gap.id)}
+                      >
+                        <div className="admin-ai-gap-head">
+                          <strong>{gap.capabilityName || gap.gapKey}</strong>
+                          <span>{gap.failureCount} failure{gap.failureCount === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="admin-ai-gap-meta">
+                          <span>{gap.gapType}</span>
+                          <span>{gap.status}</span>
+                        </div>
+                        <div className="admin-ai-gap-queries">
+                          {(gap.exampleQueries ?? []).slice(0, 2).map((query) => (
+                            <span key={query}>{query}</span>
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="admin-ai-detail">
+                  {selectedAdminAiGap ? (
+                    <>
+                      <div className="admin-ai-detail-head">
+                        <div>
+                          <h4>{selectedAdminAiGap.capabilityName || selectedAdminAiGap.gapKey}</h4>
+                          <p>{selectedAdminAiGap.gapType}</p>
+                        </div>
+                        <span className={`badge badge-${selectedAdminAiGap.status === 'resolved' ? 'success' : 'warning'}`}>
+                          {selectedAdminAiGap.status}
+                        </span>
+                      </div>
+                      <div className="admin-ai-stats">
+                        <div>
+                          <strong>{selectedAdminAiGap.failureCount}</strong>
+                          <span>Failures</span>
+                        </div>
+                        <div>
+                          <strong>{selectedAdminAiGap.frequency}</strong>
+                          <span>Frequency</span>
+                        </div>
+                        <div>
+                          <strong>{(selectedAdminAiGap.exampleQueries ?? []).length}</strong>
+                          <span>Examples</span>
+                        </div>
+                      </div>
+                      <div className="admin-ai-section">
+                        <h5>Example queries</h5>
+                        <ul className="admin-ai-query-list">
+                          {(selectedAdminAiGap.exampleQueries ?? []).length ? (
+                            selectedAdminAiGap.exampleQueries.map((query) => <li key={query}>{query}</li>)
+                          ) : (
+                            <li>No examples captured yet.</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div className="admin-ai-section">
+                        <h5>Proposal</h5>
+                        <pre className="admin-ai-proposal">{JSON.stringify(selectedAdminAiProposal ?? selectedAdminAiGap.proposal ?? {}, null, 2)}</pre>
+                      </div>
+                      <div className="admin-ai-actions admin-ai-actions-inline">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={async () => {
+                            await fetch(`/api/admin/ai-gaps/${selectedAdminAiGap.id}/propose`, { method: 'POST' });
+                            await loadAdminAiGaps();
+                          }}
+                          disabled={adminAiGapsLoading}
+                        >
+                          Draft Proposal
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={async () => {
+                            await fetch(`/api/admin/ai-gaps/${selectedAdminAiGap.id}/approve`, { method: 'POST' });
+                            await loadAdminAiGaps();
+                          }}
+                          disabled={adminAiGapsLoading}
+                        >
+                          Mark Resolved
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="admin-ai-empty">Select a gap to inspect the proposal.</div>
+                  )}
                 </div>
               </div>
             </SectionCard>
@@ -3401,6 +3792,49 @@ function App() {
     shift
   ]);
 
+  const navMenu = (
+    <nav className="sidebar-nav">
+      {navSections.map((section) => (
+        <div key={section.label} className="sidebar-section">
+          <div className="nav-section-header">{section.label}</div>
+          {section.tabs.map((item) => (
+            <button
+              key={item}
+              className={`nav-item ${activeTab === item ? 'active' : ''}`}
+              type="button"
+              onClick={() => {
+                setActiveTab(item);
+                setMobileNavOpen(false);
+              }}
+            >
+              <span className="nav-tab">
+                <span className="nav-dot" />
+                <span className="nav-tab-label">{item}</span>
+                {badgeCounts[item] > 0 ? <span className="nav-badge">{badgeCounts[item]}</span> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      ))}
+      <div className="sidebar-section sidebar-settings">
+        <div className="nav-section-header">SETTINGS</div>
+        <button
+          className={`nav-item ${activeTab === 'Settings' ? 'active' : ''}`}
+          type="button"
+          onClick={() => {
+            setActiveTab('Settings');
+            setMobileNavOpen(false);
+          }}
+        >
+          <span className="nav-tab">
+            <span className="nav-dot" />
+            <span className="nav-tab-label">Settings</span>
+          </span>
+        </button>
+      </div>
+    </nav>
+  );
+
   return (
     <div className="app-shell">
       <section className="dashboard-panel">
@@ -3409,45 +3843,24 @@ function App() {
             <div className="sidebar-logo" aria-label="Qentropix logo">
               <img src={appLogoUrl} alt="" aria-hidden="true" />
             </div>
-            <nav className="sidebar-nav">
-              {navSections.map((section) => (
-                <div key={section.label} className="sidebar-section">
-                  <div className="nav-section-header">{section.label}</div>
-                  {section.tabs.map((item) => (
-                    <button
-                      key={item}
-                      className={`nav-item ${activeTab === item ? 'active' : ''}`}
-                      type="button"
-                      onClick={() => setActiveTab(item)}
-                    >
-                      <span className="nav-tab">
-                        <span className="nav-dot" />
-                        <span className="nav-tab-label">{item}</span>
-                        {badgeCounts[item] > 0 ? <span className="nav-badge">{badgeCounts[item]}</span> : null}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-              <div className="sidebar-section sidebar-settings">
-                <div className="nav-section-header">SETTINGS</div>
-                <button
-                  className={`nav-item ${activeTab === 'Settings' ? 'active' : ''}`}
-                  type="button"
-                  onClick={() => setActiveTab('Settings')}
-                >
-                  <span className="nav-tab">
-                    <span className="nav-dot" />
-                    <span className="nav-tab-label">Settings</span>
-                  </span>
-                </button>
-              </div>
-            </nav>
+            {navMenu}
           </aside>
 
           <main className="dashboard-content">
             <header className="topbar">
-              <div>
+              <div className="topbar-title-wrap">
+                <button
+                  type="button"
+                  className="mobile-nav-toggle"
+                  onClick={() => setMobileNavOpen((current) => !current)}
+                  aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                  aria-expanded={mobileNavOpen}
+                  aria-controls="mobile-nav-drawer"
+                >
+                  <span />
+                  <span />
+                  <span />
+                </button>
                 <h2>{tabMeta[activeTab].title}</h2>
                 <p>{tabMeta[activeTab].description}</p>
               </div>
@@ -3504,6 +3917,26 @@ function App() {
         </div>
       </section>
 
+      {mobileNavOpen ? (
+        <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)}>
+          <aside
+            id="mobile-nav-drawer"
+            className="mobile-nav-drawer"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mobile-nav-drawer-header">
+              <div className="sidebar-logo" aria-label="Qentropix logo">
+                <img src={appLogoUrl} alt="" aria-hidden="true" />
+              </div>
+              <button type="button" className="mobile-nav-close" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation menu">
+                ×
+              </button>
+            </div>
+            {navMenu}
+          </aside>
+        </div>
+      ) : null}
+
       <button
         type="button"
         className="assistant-toggle"
@@ -3519,12 +3952,14 @@ function App() {
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
         activeShift={shift}
+        activeTab={activeTab}
         data={payload}
         ncrs={ncrs}
         capas={capas}
         anomalies={anomalies}
         messages={assistantMessages}
         onSendMessage={handleAssistantMessage}
+        onSubmitFeedback={submitAssistantFeedback}
         streaming={assistantStreaming}
       />
 

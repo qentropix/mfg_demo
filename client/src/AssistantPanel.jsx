@@ -4,15 +4,19 @@ export default function AssistantPanel({
   open,
   onClose,
   activeShift,
+  activeTab,
   data,
   ncrs,
   capas,
   anomalies,
   messages,
   onSendMessage,
+  onSubmitFeedback,
   streaming
 }) {
   const [inputValue, setInputValue] = useState('');
+  const [feedbackDrafts, setFeedbackDrafts] = useState({});
+  const [feedbackError, setFeedbackError] = useState('');
   const threadRef = useRef(null);
 
   useEffect(() => {
@@ -37,6 +41,66 @@ export default function AssistantPanel({
     if (!nextValue || streaming) return;
     onSendMessage(nextValue);
     setInputValue('');
+  };
+
+  const openFeedback = (message) => {
+    if (!message.requestId) return;
+    setFeedbackError('');
+    setFeedbackDrafts((current) => ({
+      ...current,
+      [message.requestId]: {
+        open: true,
+        rating: current[message.requestId]?.rating ?? 4,
+        comment: current[message.requestId]?.comment ?? '',
+        correctAnswer: current[message.requestId]?.correctAnswer ?? ''
+      }
+    }));
+  };
+
+  const closeFeedback = (requestId) => {
+    setFeedbackDrafts((current) => ({
+      ...current,
+      [requestId]: {
+        ...(current[requestId] ?? {}),
+        open: false
+      }
+    }));
+  };
+
+  const updateDraft = (requestId, patch) => {
+    setFeedbackDrafts((current) => ({
+      ...current,
+      [requestId]: {
+        open: true,
+        rating: current[requestId]?.rating ?? 4,
+        comment: current[requestId]?.comment ?? '',
+        correctAnswer: current[requestId]?.correctAnswer ?? '',
+        ...patch
+      }
+    }));
+  };
+
+  const submitFeedback = async (message) => {
+    const draft = feedbackDrafts[message.requestId] ?? {};
+    setFeedbackError('');
+    try {
+      await onSubmitFeedback({
+        requestId: message.requestId,
+        rating: draft.rating ?? 4,
+        comment: draft.comment ?? '',
+        correctAnswer: draft.correctAnswer ?? '',
+        rawQuery: message.prompt ?? '',
+        source: message.source ?? '',
+        queryType: message.queryType ?? '',
+        resolvedScope: message.resolvedScope ?? '',
+        resolvedWindow: message.resolvedWindow ?? '',
+        reaskedOrCorrected: Number(draft.rating ?? 4) <= 2 || Boolean(draft.correctAnswer),
+        activeTab: message.activeTab ?? activeTab
+      });
+      closeFeedback(message.requestId);
+    } catch (error) {
+      setFeedbackError(error.message);
+    }
   };
 
   const starterChips = [
@@ -85,10 +149,64 @@ export default function AssistantPanel({
             <article key={`${message.role}-${index}`} className={`assistant-message role-${message.role}`}>
               <span className="assistant-message-role">{message.role === 'user' ? 'You' : 'Assistant'}</span>
               <p>{message.content || (message.role === 'assistant' && streaming ? 'Thinking...' : '')}</p>
+              {message.role === 'assistant' && message.requestId ? (
+                <div className="assistant-feedback">
+                  <div className="assistant-feedback-actions">
+                    <button type="button" className="chip chip-feedback" onClick={() => openFeedback(message)}>
+                      Give feedback
+                    </button>
+                    {message.feedbackSubmitted ? <span className="assistant-feedback-sent">Feedback sent</span> : null}
+                  </div>
+                  {feedbackDrafts[message.requestId]?.open ? (
+                    <div className="assistant-feedback-form">
+                      <label className="assistant-feedback-field">
+                        <span>Rating</span>
+                        <select
+                          value={feedbackDrafts[message.requestId]?.rating ?? 4}
+                          onChange={(event) => updateDraft(message.requestId, { rating: Number(event.target.value) })}
+                        >
+                          <option value={5}>5 - Excellent</option>
+                          <option value={4}>4 - Good</option>
+                          <option value={3}>3 - Okay</option>
+                          <option value={2}>2 - Off</option>
+                          <option value={1}>1 - Wrong</option>
+                        </select>
+                      </label>
+                      <label className="assistant-feedback-field">
+                        <span>Comment</span>
+                        <textarea
+                          rows={2}
+                          value={feedbackDrafts[message.requestId]?.comment ?? ''}
+                          onChange={(event) => updateDraft(message.requestId, { comment: event.target.value })}
+                          placeholder="What was good or what was missing?"
+                        />
+                      </label>
+                      <label className="assistant-feedback-field">
+                        <span>Correct answer</span>
+                        <textarea
+                          rows={2}
+                          value={feedbackDrafts[message.requestId]?.correctAnswer ?? ''}
+                          onChange={(event) => updateDraft(message.requestId, { correctAnswer: event.target.value })}
+                          placeholder="If needed, provide the correct answer or the missing detail."
+                        />
+                      </label>
+                      <div className="assistant-feedback-actions">
+                        <button type="button" className="btn-secondary" onClick={() => closeFeedback(message.requestId)}>
+                          Cancel
+                        </button>
+                        <button type="button" className="btn-primary" onClick={() => submitFeedback(message)}>
+                          Send feedback
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </article>
           ))
         )}
       </div>
+      {feedbackError ? <div className="assistant-feedback-error">{feedbackError}</div> : null}
 
       <div className="assistant-input-row">
         <textarea

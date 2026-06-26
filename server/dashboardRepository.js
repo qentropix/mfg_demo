@@ -45,8 +45,18 @@ function setMergedNcrs(shiftName, ncrs) {
   );
 }
 
+export function replaceMergedNcrs(shiftName, ncrs) {
+  setMergedNcrs(shiftName, ncrs);
+  return getMergedNcrs(shiftName);
+}
+
 function getMergedCapas() {
   return capaStore.map(cloneCapa);
+}
+
+export function replaceMergedCapas(nextCapas) {
+  capaStore = nextCapas.map(cloneCapa);
+  return getMergedCapas();
 }
 
 function mapPressRow(row) {
@@ -414,6 +424,63 @@ export async function updateDashboardSnapshot(shiftName, updates) {
       inspectionPassRate: toNumber(snapshot.quality_rate)
     }
   };
+}
+
+export async function replaceShiftSeries(shiftName, { downtime, trend }) {
+  if (!pool) {
+    throw new Error('Write endpoints require PostgreSQL. Set DATABASE_URL and run the API against the database.');
+  }
+
+  if (downtime !== undefined) {
+    await pool.query('delete from downtime_events where shift_name = $1', [shiftName]);
+    for (let index = 0; index < downtime.length; index += 1) {
+      const row = downtime[index];
+      await pool.query(
+        `insert into downtime_events (shift_name, reason, minutes, percent, sort_order)
+         values ($1, $2, $3, $4, $5)`,
+        [shiftName, row.reason, row.minutes, row.percent, index + 1]
+      );
+    }
+  }
+
+  if (trend !== undefined) {
+    await pool.query('delete from oee_trend where shift_name = $1', [shiftName]);
+    for (let index = 0; index < trend.length; index += 1) {
+      const row = trend[index];
+      await pool.query(
+        `insert into oee_trend (shift_name, day_label, value, sort_order)
+         values ($1, $2, $3, $4)`,
+        [shiftName, row.label, row.value, index + 1]
+      );
+    }
+  }
+
+  await pool.query('update dashboard_snapshots set last_updated = now() where shift_name = $1', [shiftName]);
+}
+
+export async function replaceAlerts(shiftName, alerts) {
+  if (!pool) {
+    throw new Error('Write endpoints require PostgreSQL. Set DATABASE_URL and run the API against the database.');
+  }
+
+  await pool.query('delete from alerts where shift_name = $1', [shiftName]);
+
+  for (const alert of alerts) {
+    await pool.query(
+      `insert into alerts (shift_name, severity, title, message, created_at, is_active)
+       values ($1, $2, $3, $4, coalesce($5, now()), coalesce($6, true))`,
+      [
+        shiftName,
+        alert.severity || 'warning',
+        alert.title,
+        alert.message,
+        alert.createdAt ? new Date(alert.createdAt).toISOString() : null,
+        alert.isActive
+      ]
+    );
+  }
+
+  await refreshAlertCounts(shiftName);
 }
 
 export async function listAlerts(shiftName = 'Shift A') {

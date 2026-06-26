@@ -53,7 +53,7 @@ export default function AnomalyPanel({ anomaly, press, apiBase = '', onClose, on
 
       if (!response.ok) {
         if (response.status === 503) {
-          setDiagnosisText('AI not configured. Set ANTHROPIC_API_KEY on the server.');
+          setDiagnosisText('Local AI service is not available. Start Ollama or keep the fallback mode active on the server.');
           return;
         }
         throw new Error(`Request failed with status ${response.status}`);

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -37,6 +38,23 @@ async function run() {
     for (const statement of splitStatements(seed)) {
       await client.query(statement);
     }
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [path.join(rootDir, 'scripts', 'backfill-history.js')], {
+        stdio: 'inherit',
+        env: process.env
+      });
+
+      child.on('exit', (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(new Error(`History backfill failed with exit code ${code}.`));
+      });
+
+      child.on('error', reject);
+    });
 
     console.log('Database schema and seed data loaded successfully.');
   } finally {

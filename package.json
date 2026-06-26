@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "server": "node server/index.js",
+    "worker": "node server/historyWorker.js",
     "client": "vite --config client/vite.config.js",
     "build": "vite build --config client/vite.config.js",
     "preview": "vite preview --config client/vite.config.js",
-    "db:setup": "node scripts/setup-db.js"
+    "db:setup": "node scripts/setup-db.js",
+    "db:backfill": "node scripts/backfill-history.js",
+    "ai:analyze": "node scripts/analyze-ai-gaps.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.57.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

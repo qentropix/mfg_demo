@@ -1,0 +1,344 @@
+{
+  "info": {
+    "name": "mfg_demo API",
+    "_postman_id": "4f0f4f1d-2d0e-4f0b-9f8c-8d0f9d9f4f11",
+    "description": "Postman collection for the mfg_demo live dashboard APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        }
+      }
+    },
+    {
+      "name": "Get Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/dashboard?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "dashboard"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reset Shift",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"Shift A\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/reset?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "reset"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Dashboard Snapshot",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"plantName\": \"Plant 1\",\n  \"overallOee\": 72.4,\n  \"totalOutput\": 19880,\n  \"goodParts\": 18420,\n  \"downtimeLabel\": \"2h 12m\",\n  \"downtimeMinutes\": 132,\n  \"activeAlerts\": 3,\n  \"criticalAlerts\": 1,\n  \"warningAlerts\": 2,\n  \"qualityRate\": 92.7\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/dashboard/snapshot?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "dashboard", "snapshot"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Press",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Down\",\n  \"oee\": 0,\n  \"outputCount\": 0,\n  \"downtimeMinutes\": 88,\n  \"currentJob\": \"Maintenance Hold\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/presses/Press%2005?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "presses", "Press 05"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bulk Admin State Update",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"snapshot\": {\n    \"plantName\": \"Plant 1\",\n    \"overallOee\": 72.4,\n    \"totalOutput\": 19880,\n    \"goodParts\": 18420,\n    \"downtimeLabel\": \"2h 12m\",\n    \"downtimeMinutes\": 132,\n    \"activeAlerts\": 3,\n    \"criticalAlerts\": 1,\n    \"warningAlerts\": 2,\n    \"qualityRate\": 92.7\n  },\n  \"presses\": [\n    {\n      \"pressName\": \"Press 05\",\n      \"status\": \"Down\",\n      \"oee\": 0,\n      \"outputCount\": 0,\n      \"downtimeMinutes\": 88,\n      \"currentJob\": \"Maintenance Hold\"\n    }\n  ],\n  \"downtime\": [\n    { \"reason\": \"Tool Change\", \"minutes\": 120, \"percent\": 35.0 },\n    { \"reason\": \"Breakdown\", \"minutes\": 88, \"percent\": 25.7 }\n  ],\n  \"trend\": [\n    { \"label\": \"Mon\", \"value\": 68.2 },\n    { \"label\": \"Tue\", \"value\": 70.1 },\n    { \"label\": \"Wed\", \"value\": 71.8 }\n  ],\n  \"alerts\": [\n    {\n      \"severity\": \"critical\",\n      \"title\": \"Press 05 down\",\n      \"message\": \"Hydraulic fault detected.\",\n      \"isActive\": true\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/shifts/{{shift}}/state",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "shifts", "{{shift}}", "state"]
+        }
+      }
+    },
+    {
+      "name": "Create Alert",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"severity\": \"critical\",\n  \"title\": \"Press 05 down\",\n  \"message\": \"Hydraulic fault detected.\",\n  \"isActive\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/alerts?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "alerts"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Alert",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/alerts/{{alertId}}?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "alerts", "{{alertId}}"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create NCR",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"machine\": \"Press 05\",\n  \"defectType\": \"Hydraulic leak\",\n  \"qtyAffected\": 12,\n  \"description\": \"Oil leak observed during startup checks.\",\n  \"severity\": \"High\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/ncr?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "ncr"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create CAPA",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Investigate press failure\",\n  \"status\": \"Open\",\n  \"dueDate\": 1712000000000,\n  \"ncrId\": \"NCR-9001\",\n  \"actions\": []\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/capa?shift={{shift}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "capa"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Retrieval Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"What was OEE on 03-03-2026 for Shift A?\",\n  \"shiftName\": \"Shift A\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/ai/query",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "ai", "query"]
+        }
+      }
+    },
+    {
+      "name": "History Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/history/summary?shift={{shift}}&days=210",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "history", "summary"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" },
+            { "key": "days", "value": "210" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "History Events",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/history/events?shift={{shift}}&days=30&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "history", "events"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" },
+            { "key": "days", "value": "30" },
+            { "key": "limit", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "History Insights",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/history/insights?shift={{shift}}&days=210",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "history", "insights"],
+          "query": [
+            { "key": "shift", "value": "{{shift}}" },
+            { "key": "days", "value": "210" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AI Feedback",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"requestId\": \"{{requestId}}\",\n  \"rating\": 2,\n  \"comment\": \"The answer was incomplete.\",\n  \"correctAnswer\": \"Expected the month comparison to include April.\",\n  \"shiftName\": \"Shift A\",\n  \"activeTab\": \"Reports\",\n  \"rawQuery\": \"Compare output of May vs June 2026\",\n  \"source\": \"sql-agent\",\n  \"queryType\": \"month-compare\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/ai/feedback",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "ai", "feedback"]
+        }
+      }
+    },
+    {
+      "name": "List AI Gaps",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/ai-gaps?limit=25",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "ai-gaps"],
+          "query": [
+            { "key": "limit", "value": "25" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Analyze AI Gaps",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"days\": 30,\n  \"minCount\": 2\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/ai-gaps/analyze",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "ai-gaps", "analyze"]
+        }
+      }
+    },
+    {
+      "name": "Draft AI Gap Proposal",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patchJson\": {\n    \"capability_name\": \"month_comparison\",\n    \"gap_type\": \"missing_aggregation\",\n    \"summary\": \"Add or refine month comparison retrieval.\",\n    \"suggested_tests\": [\"May vs June 2026\"]\n  },\n  \"testJson\": [\"May vs June 2026\"]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/ai-gaps/{{gapId}}/propose",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "ai-gaps", "{{gapId}}", "propose"]
+        }
+      }
+    },
+    {
+      "name": "Approve AI Gap",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/ai-gaps/{{gapId}}/approve",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "ai-gaps", "{{gapId}}", "approve"]
+        }
+      }
+    }
+  ]
+}
