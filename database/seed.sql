@@ -22,20 +22,20 @@ insert into dashboard_snapshots (
 ('Shift B', 'Plant 1', '2026-05-28 21:41:30+05:30', 74.2, 17210, 15988, '3h 18m', 198, 3, 1, 2, 92.9);
 
 insert into presses (
-  shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, sort_order
+  shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, maintenance_notes, sort_order
 ) values
-('Shift A', 'Press 01', 'Running', 85, 3246, 18, 'Auto Door Panels', 1),
-('Shift A', 'Press 02', 'Running', 82, 3012, 22, 'Side Frame Batch', 2),
-('Shift A', 'Press 03', 'Running', 75, 2789, 35, 'Hinge Mount Kits', 3),
-('Shift A', 'Press 04', 'Minor Stop', 60, 2105, 62, 'Reinforcement Brackets', 4),
-('Shift A', 'Press 05', 'Down', 0, 0, 72, 'Tool Change Queue', 5),
-('Shift A', 'Press 06', 'Running', 88, 3890, 12, 'Latch Assembly', 6),
-('Shift B', 'Press 01', 'Running', 81, 2988, 19, 'Auto Door Panels', 1),
-('Shift B', 'Press 02', 'Running', 79, 2840, 23, 'Side Frame Batch', 2),
-('Shift B', 'Press 03', 'Minor Stop', 68, 2514, 41, 'Hinge Mount Kits', 3),
-('Shift B', 'Press 04', 'Running', 72, 2652, 29, 'Reinforcement Brackets', 4),
-('Shift B', 'Press 05', 'Down', 0, 0, 88, 'Maintenance Hold', 5),
-('Shift B', 'Press 06', 'Running', 86, 3421, 15, 'Latch Assembly', 6);
+('Shift A', 'Press 01', 'Running', 85, 3246, 18, 'Auto Door Panels', 'PM completed last Friday. No open maintenance items. Next scheduled PM in 3 weeks.', 1),
+('Shift A', 'Press 02', 'Running', 82, 3012, 22, 'Side Frame Batch', 'Tooling replaced last Tuesday. Minor wear on die face - inspect at next 10k cycles.', 2),
+('Shift A', 'Press 03', 'Running', 75, 2789, 35, 'Hinge Mount Kits', 'Hydraulic fluid changed last cycle. Slight vibration at high-speed run - monitored.', 3),
+('Shift A', 'Press 04', 'Minor Stop', 60, 2105, 62, 'Reinforcement Brackets', 'Minor stop pattern under investigation. Quality hold cleared after recalibration at 08:58.', 4),
+('Shift A', 'Press 05', 'Down', 0, 0, 72, 'Tool Change Queue', 'SAFETY LOCKOUT ACTIVE - Hydraulic pressure below threshold. Maintenance team on site.', 5),
+('Shift A', 'Press 06', 'Running', 88, 3890, 12, 'Latch Assembly', 'Running at rated speed. Last inspection clear. No open maintenance items.', 6),
+('Shift B', 'Press 01', 'Running', 81, 2988, 19, 'Auto Door Panels', 'PM completed last Friday. No open maintenance items. Next scheduled PM in 3 weeks.', 1),
+('Shift B', 'Press 02', 'Running', 79, 2840, 23, 'Side Frame Batch', 'Tooling replaced last Tuesday. Minor wear on die face - inspect at next 10k cycles.', 2),
+('Shift B', 'Press 03', 'Minor Stop', 68, 2514, 41, 'Hinge Mount Kits', 'Hydraulic fluid changed last cycle. Slight vibration at high-speed run - monitored.', 3),
+('Shift B', 'Press 04', 'Running', 72, 2652, 29, 'Reinforcement Brackets', 'Minor stop pattern under investigation. Quality hold cleared after recalibration at 08:58.', 4),
+('Shift B', 'Press 05', 'Down', 0, 0, 88, 'Maintenance Hold', 'SAFETY LOCKOUT ACTIVE - Hydraulic pressure below threshold. Maintenance team on site.', 5),
+('Shift B', 'Press 06', 'Running', 86, 3421, 15, 'Latch Assembly', 'Running at rated speed. Last inspection clear. No open maintenance items.', 6);
 
 insert into downtime_events (
   shift_name, reason, minutes, percent, sort_order

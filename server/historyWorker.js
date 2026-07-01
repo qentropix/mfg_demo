@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import pg from 'pg';
 import { getDashboardPayload } from './dashboardRepository.js';
+import { buildDomainHistoryFromCurrentPayload } from './currentDomainRepository.js';
+import { insertDomainHistory } from './domainHistoryRepository.js';
 import { insertOperationalEvents, upsertDailyMetrics, upsertIngestionCheckpoint } from './historyRepository.js';
 
 dotenv.config();
@@ -74,9 +76,14 @@ async function syncShift(client, shiftName) {
 
   lastSignatureByShift.set(shiftName, signature);
 
+  const metricDate = new Date().toISOString().slice(0, 10);
+  const domainHistory = buildDomainHistoryFromCurrentPayload({ shiftName, metricDate, payload });
+  const domainRowCount = Object.values(domainHistory).reduce((sum, rows) => sum + rows.length, 0);
+
   await upsertDailyMetrics(client, buildDailyMetric(shiftName, payload));
   await insertOperationalEvents(client, [buildSyncEvent(shiftName, payload)]);
-  await upsertIngestionCheckpoint(client, `live-sync:${shiftName}`, new Date().toISOString(), 1);
+  await insertDomainHistory(client, domainHistory);
+  await upsertIngestionCheckpoint(client, `live-sync:${shiftName}`, new Date().toISOString(), 1 + domainRowCount);
   await notify(client, shiftName);
   return true;
 }

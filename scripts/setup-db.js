@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import pg from 'pg';
+import { resetCurrentDomainData } from '../server/currentDomainRepository.js';
 
 dotenv.config();
 
@@ -38,6 +39,8 @@ async function run() {
     for (const statement of splitStatements(seed)) {
       await client.query(statement);
     }
+
+    await resetCurrentDomainData(client);
 
     await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [path.join(rootDir, 'scripts', 'backfill-history.js')], {

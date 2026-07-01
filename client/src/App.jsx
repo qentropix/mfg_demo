@@ -261,6 +261,84 @@ function SectionCard({ title, subtitle, badge, className = '', children }) {
   );
 }
 
+function MaintenanceNoteRow({ press, onSave }) {
+  const savedNote = press.maintenanceNotes ?? '';
+  const fieldId = `maintenance-note-${press.pressName.replace(/\s+/g, '-').toLowerCase()}`;
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(savedNote);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useEffect(() => {
+    setDraft(savedNote);
+    setSaveError('');
+  }, [savedNote]);
+
+  const cancelEditing = () => {
+    setDraft(savedNote);
+    setSaveError('');
+    setIsEditing(false);
+  };
+
+  const saveNote = async (event) => {
+    event.preventDefault();
+    if (isSaving) return;
+
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await onSave(press.pressName, draft);
+      setIsEditing(false);
+    } catch (error) {
+      setSaveError(error.message || 'Could not save maintenance notes.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <form className="maintenance-note-editor" onSubmit={saveNote}>
+        <label htmlFor={fieldId}>{press.pressName}</label>
+        <textarea
+          id={fieldId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') cancelEditing();
+          }}
+          maxLength={2000}
+          rows={3}
+          autoFocus
+          disabled={isSaving}
+        />
+        {saveError ? <p role="alert">{saveError}</p> : null}
+        <div className="maintenance-note-editor-actions">
+          <button type="button" className="btn-secondary" onClick={cancelEditing} disabled={isSaving}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="note-row maintenance-note-row"
+      onClick={() => setIsEditing(true)}
+      aria-label={`Edit maintenance notes for ${press.pressName}`}
+    >
+      <strong>{press.pressName}</strong>
+      <span>{savedNote || 'No maintenance notes on record.'}</span>
+      <small>Edit</small>
+    </button>
+  );
+}
+
 function ReportCard({ text, activeShift }) {
   const sections = parseShiftReport(text);
 
@@ -483,6 +561,10 @@ function App() {
   const [highlightedNcr, setHighlightedNcr] = useState('');
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(null);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [supplierStatusFilter, setSupplierStatusFilter] = useState('All');
+  const [supplierRiskFilter, setSupplierRiskFilter] = useState('All');
+  const [supplierMaterialFilter, setSupplierMaterialFilter] = useState('All');
   const [qualityAnalysisText, setQualityAnalysisText] = useState('');
   const [qualityAnalysisLoading, setQualityAnalysisLoading] = useState(false);
   const [ncrModalOpen, setNcrModalOpen] = useState(false);
@@ -507,6 +589,9 @@ function App() {
   const [adminAiGapsLimit, setAdminAiGapsLimit] = useState(25);
   const [adminAiGapSelectedId, setAdminAiGapSelectedId] = useState(null);
   const [adminAiGapMessage, setAdminAiGapMessage] = useState('');
+  const [dataHealth, setDataHealth] = useState(null);
+  const [dataHealthLoading, setDataHealthLoading] = useState(false);
+  const [dataHealthError, setDataHealthError] = useState('');
   const [anomalyThresholds, setAnomalyThresholds] = useState({
     warningOeeDrop: 8,
     criticalOee: 65,
@@ -551,6 +636,22 @@ function App() {
     }
   }
 
+  async function loadDataHealth() {
+    setDataHealthLoading(true);
+    setDataHealthError('');
+    try {
+      const response = await fetch('/api/admin/data-health');
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      setDataHealth(await response.json());
+    } catch (fetchError) {
+      setDataHealthError(fetchError.message);
+    } finally {
+      setDataHealthLoading(false);
+    }
+  }
+
   const selectedAdminAiGap = adminAiGaps.find((gap) => gap.id === adminAiGapSelectedId) ?? adminAiGaps[0] ?? null;
   const selectedAdminAiProposal = selectedAdminAiGap?.proposal ?? selectedAdminAiGap?.proposals?.[0]?.patchJson ?? selectedAdminAiGap?.proposals?.[0]?.patch_json ?? null;
 
@@ -558,7 +659,10 @@ function App() {
     if (activeTab === 'Settings' && !adminAiGaps.length && !adminAiGapsLoading) {
       loadAdminAiGaps().catch(() => {});
     }
-  }, [activeTab, adminAiGaps.length, adminAiGapsLoading, adminAiGapsLimit, adminAiGapsStatus]);
+    if (activeTab === 'Settings' && !dataHealth && !dataHealthLoading) {
+      loadDataHealth().catch(() => {});
+    }
+  }, [activeTab, adminAiGaps.length, adminAiGapsLoading, adminAiGapsLimit, adminAiGapsStatus, dataHealth, dataHealthLoading]);
 
   const integrations = [
     {
@@ -892,10 +996,10 @@ function App() {
   useEffect(() => {
     setNcrs(payload?.ncrs ?? []);
     setCapas(payload?.capas ?? []);
-    if (suppliers.length === 0 && payload?.suppliers?.length) {
+    if (payload?.suppliers?.length) {
       setSuppliers(payload.suppliers);
     }
-    if (calibrations.length === 0 && payload?.calibrations?.length) {
+    if (payload?.calibrations?.length) {
       setCalibrations(
         payload.calibrations.map((instrument) => ({
           ...instrument,
@@ -944,11 +1048,10 @@ function App() {
 
   useEffect(() => {
     if (!payload?.employees?.length) return;
-    if (employeesSeedShift === shift && employees.length) return;
 
     setEmployees(payload.employees);
     setEmployeesSeedShift(shift);
-  }, [payload?.employees, shift, employeesSeedShift, employees.length]);
+  }, [payload?.employees, shift]);
 
   useEffect(() => {
     if (!selectedCalibrationAssetTag) return;
@@ -1193,6 +1296,16 @@ function App() {
     } catch {
       setError('Unable to copy report to clipboard.');
     }
+  };
+
+  const handleExportReport = (format) => {
+    const selectedReportDate = reportDate || getLocalDateInputValue();
+    const params = new URLSearchParams({
+      shift,
+      reportDate: selectedReportDate,
+      format
+    });
+    window.open(`${baseUrl}api/reports/daily/export?${params.toString()}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleViewReport = (entry) => {
@@ -1443,6 +1556,8 @@ function App() {
   const supplierModel = useMemo(() => {
     const selectedSupplier =
       supplierRoster.find((supplier) => supplier.id === selectedSupplierId) ?? null;
+    const supplierMaterials = [...new Set(supplierRoster.flatMap((supplier) => supplier.materials ?? []))].sort();
+    const search = supplierSearch.trim().toLowerCase();
 
     const supplierCounts = {
       total: supplierRoster.length,
@@ -1451,7 +1566,20 @@ function App() {
       onHold: supplierRoster.filter((supplier) => supplier.status === 'Suspended').length
     };
 
-    const sortedSuppliers = [...supplierRoster].sort((a, b) => {
+    const filteredSuppliers = supplierRoster.filter((supplier) => {
+      const statusMatches = supplierStatusFilter === 'All' || supplier.status === supplierStatusFilter;
+      const riskMatches = supplierRiskFilter === 'All' || effectiveRiskLevel(supplier) === supplierRiskFilter;
+      const materialMatches =
+        supplierMaterialFilter === 'All' || (supplier.materials ?? []).includes(supplierMaterialFilter);
+      const queryMatches =
+        !search ||
+        [supplier.name, supplier.id, supplier.status, supplier.riskLevel, effectiveRiskLevel(supplier), ...(supplier.materials ?? [])]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(search));
+      return statusMatches && riskMatches && materialMatches && queryMatches;
+    });
+
+    const sortedSuppliers = [...filteredSuppliers].sort((a, b) => {
       const order = { Suspended: 0, 'Requalification Due': 1, Approved: 2 };
       const statusA = order[a.status] ?? 3;
       const statusB = order[b.status] ?? 3;
@@ -1461,10 +1589,12 @@ function App() {
 
     return {
       supplierCounts,
+      supplierMaterials,
       selectedSupplier,
+      filteredSuppliers,
       sortedSuppliers
     };
-  }, [supplierRoster, selectedSupplierId]);
+  }, [supplierRoster, selectedSupplierId, supplierSearch, supplierStatusFilter, supplierRiskFilter, supplierMaterialFilter]);
 
   const capaModel = useMemo(() => {
     const stages = ['Open', 'Root Cause Analysis', 'Action Pending', 'Verification', 'Closed'];
@@ -1934,22 +2064,30 @@ function App() {
     setRequestText('');
   };
 
-  const handleScheduleCalibration = ({ instrument, scheduledDate, provider, type }) => {
+  const handleScheduleCalibration = async ({ instrument, scheduledDate, provider, type }) => {
     const formattedDate = new Date(scheduledDate).toLocaleDateString();
+    const optimistic = {
+      ...instrument,
+      lastScheduledAt: Date.now(),
+      scheduledProvider: provider,
+      scheduledType: type
+    };
+
+    setCalibrations((current) => current.map((item) => (item.assetTag === instrument.assetTag ? optimistic : item)));
     setToastMessage(`Recalibration scheduled for ${formattedDate}.`);
-    setCalibrations((current) =>
-      current.map((item) =>
-        item.assetTag === instrument.assetTag
-          ? {
-              ...item,
-              lastScheduledAt: Date.now(),
-              nextDue: item.nextDue,
-              scheduledProvider: provider,
-              scheduledType: type
-            }
-          : item
-      )
-    );
+
+    try {
+      const response = await fetch(`${baseUrl}api/calibrations/${encodeURIComponent(instrument.assetTag)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(optimistic)
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+      await loadDashboard();
+    } catch (error) {
+      setError(error.message);
+      await loadDashboard().catch(() => undefined);
+    }
   };
 
   const handleAddInstrument = () => {
@@ -1987,6 +2125,19 @@ function App() {
     setCalibrations((current) => [...current, nextInstrument]);
     setCalibrationModalOpen(false);
     setToastMessage(`Instrument ${nextInstrument.assetTag} added as ${status.toLowerCase()}.`);
+    fetch(`${baseUrl}api/calibrations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nextInstrument)
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        return loadDashboard();
+      })
+      .catch((error) => {
+        setError(error.message);
+        return loadDashboard().catch(() => undefined);
+      });
     setCalibrationForm({
       assetTag: '',
       name: '',
@@ -1998,7 +2149,7 @@ function App() {
     });
   };
 
-  const handleLogTraining = (employeeId, cert) => {
+  const handleLogTraining = async (employeeId, cert) => {
     if (!cert?.name) return;
 
     setEmployees((current) =>
@@ -2015,18 +2166,44 @@ function App() {
       )
     );
     setToastMessage(`Training logged for ${cert.name}.`);
+
+    try {
+      const response = await fetch(`${baseUrl}api/workforce/${encodeURIComponent(employeeId)}/certifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftName: shift, ...cert })
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+      await loadDashboard();
+    } catch (error) {
+      setError(error.message);
+      await loadDashboard().catch(() => undefined);
+    }
   };
 
-  const handleSupplierStatusChange = (supplierId, newStatus) => {
+  const handleSupplierStatusChange = async (supplierId, newStatus) => {
     setSuppliers((current) =>
       current.map((supplier) =>
         supplier.id === supplierId ? { ...supplier, status: newStatus } : supplier
       )
     );
     setToastMessage(`Supplier status updated to ${newStatus}.`);
+
+    try {
+      const response = await fetch(`${baseUrl}api/suppliers/${encodeURIComponent(supplierId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+      await loadDashboard();
+    } catch (error) {
+      setError(error.message);
+      await loadDashboard().catch(() => undefined);
+    }
   };
 
-  const handleScheduleAudit = (supplierId, scheduledDate, notes = '') => {
+  const handleScheduleAudit = async (supplierId, scheduledDate, notes = '') => {
     const targetDate = new Date(scheduledDate);
     if (!Number.isFinite(targetDate.getTime())) return;
 
@@ -2049,6 +2226,42 @@ function App() {
       )
     );
     setToastMessage(`Audit scheduled for ${targetDate.toLocaleDateString()}.`);
+
+    try {
+      const response = await fetch(`${baseUrl}api/suppliers/${encodeURIComponent(supplierId)}/audits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledDate: targetDate.toISOString(), notes })
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+      await loadDashboard();
+    } catch (error) {
+      setError(error.message);
+      await loadDashboard().catch(() => undefined);
+    }
+  };
+
+  const handleSaveMaintenanceNotes = async (pressName, maintenanceNotes) => {
+    const response = await fetch(
+      `${baseUrl}api/presses/${encodeURIComponent(pressName)}?shift=${encodeURIComponent(shift)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maintenanceNotes })
+      }
+    );
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || `Request failed with status ${response.status}`);
+    }
+
+    if (data.dashboard) {
+      setPayload(data.dashboard);
+    }
+    setSelectedPress((current) => (current?.pressName === pressName ? data.press : current));
+    setToastMessage(`Maintenance notes updated for ${pressName}.`);
+    return data.press;
   };
 
   useEffect(() => {
@@ -2074,7 +2287,6 @@ function App() {
   const tabContent = useMemo(() => {
     if (!payload) return null;
 
-    const pressWarnings = payload.presses.filter((press) => press.status !== 'Running');
     const shiftComparisonEntries = shiftTabs.map((item) => ({
       shift: item,
       value: shiftSummaries[item] ?? 1
@@ -2250,15 +2462,16 @@ function App() {
           </section>
           <SectionCard
             title="Maintenance Notes"
-            subtitle="Simple demo log for the current shift"
+            subtitle="Click any note to edit the current shift log"
             className="maintenance-notes-card"
           >
             <div className="note-list">
-              {pressWarnings.map((press) => (
-                <div key={press.pressName} className="note-row">
-                  <strong>{press.pressName}</strong>
-                  <span>{press.status} on {press.currentJob}</span>
-                </div>
+              {payload.presses.map((press) => (
+                <MaintenanceNoteRow
+                  key={press.pressName}
+                  press={press}
+                  onSave={handleSaveMaintenanceNotes}
+                />
               ))}
             </div>
           </SectionCard>
@@ -2975,6 +3188,49 @@ function App() {
                 <p>Coverage across approved, requalification due, and on-hold suppliers.</p>
               </div>
             </div>
+            <div className="supplier-filter-bar">
+              <label className="scenario-field supplier-search-field">
+                <span>Search</span>
+                <input
+                  type="search"
+                  placeholder="Supplier, ID, status, risk, or material"
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                />
+              </label>
+              <label className="scenario-field supplier-material-field">
+                <span>Material</span>
+                <select value={supplierMaterialFilter} onChange={(event) => setSupplierMaterialFilter(event.target.value)}>
+                  <option value="All">All materials</option>
+                  {supplierModel.supplierMaterials.map((material) => (
+                    <option key={material} value={material}>
+                      {material}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="scenario-field supplier-status-field">
+                <span>Status</span>
+                <select value={supplierStatusFilter} onChange={(event) => setSupplierStatusFilter(event.target.value)}>
+                  <option value="All">All statuses</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Requalification Due">Requalification Due</option>
+                  <option value="Suspended">Suspended</option>
+                </select>
+              </label>
+              <label className="scenario-field supplier-risk-field">
+                <span>Risk</span>
+                <select value={supplierRiskFilter} onChange={(event) => setSupplierRiskFilter(event.target.value)}>
+                  <option value="All">All risks</option>
+                  <option value="High">High risk</option>
+                  <option value="Medium">Medium risk</option>
+                  <option value="Low">Low risk</option>
+                </select>
+              </label>
+              <div className="supplier-filter-summary">
+                Showing {supplierModel.sortedSuppliers.length} of {supplierModel.supplierCounts.total}
+              </div>
+            </div>
             <div className="quality-grid supplier-summary-grid">
               <article className="quality-item">
                 <span>Total Suppliers</span>
@@ -3288,6 +3544,12 @@ function App() {
                   <button type="button" className="btn-secondary" onClick={handleCopyReport} disabled={!reportText.trim()}>
                     Copy to Clipboard
                   </button>
+                  <button type="button" className="btn-secondary" onClick={() => handleExportReport('csv')} disabled={reportLoading}>
+                    Export CSV
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => handleExportReport('pdf')} disabled={reportLoading}>
+                    Export PDF
+                  </button>
                 </div>
               </div>
 
@@ -3438,9 +3700,105 @@ function App() {
                 </div>
               </div>
             </SectionCard>
+          </section>
+        </>
+      ),
+      Settings: (
+        <>
+          <section className="section-card">
+            <div className="section-card-header">
+              <div>
+                <h3>Anomaly Detection Thresholds</h3>
+                <p>Adjust detection sensitivity for live machine monitoring.</p>
+              </div>
+            </div>
+            <div className="threshold-grid">
+              <label className="threshold-field">
+                <span>OEE Warning Drop (%)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={anomalyThresholds.warningOeeDrop}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      warningOeeDrop: Number(event.target.value) || 0
+                    }))
+                  }
+                />
+              </label>
+              <label className="threshold-field">
+                <span>Critical OEE Floor (%)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={anomalyThresholds.criticalOee}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      criticalOee: Number(event.target.value) || 0
+                    }))
+                  }
+                />
+              </label>
+              <label className="threshold-field">
+                <span>Sustained Ticks for Critical</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={anomalyThresholds.sustainedTicks}
+                  onChange={(event) =>
+                    setAnomalyThresholds((current) => ({
+                      ...current,
+                      sustainedTicks: Math.max(1, Number(event.target.value) || 1)
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="tab-grid tab-grid-3 integrations-layout">
+            <SectionCard title="Data Health" subtitle="PostgreSQL source coverage and worker checkpoints">
+              <div className="admin-ai-actions">
+                <button type="button" className="btn-secondary" onClick={() => loadDataHealth()} disabled={dataHealthLoading}>
+                  {dataHealthLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+              {dataHealthError ? <p className="admin-ai-error">{dataHealthError}</p> : null}
+              <div className="note-list settings-profile-list">
+                {(dataHealth?.tables ?? []).slice(0, 8).map((table) => (
+                  <div key={table.table} className="note-row">
+                    <strong>{table.table}</strong>
+                    <span>
+                      {table.rows} rows{table.min_date && table.max_date ? ` | ${table.min_date} to ${table.max_date}` : ''}
+                    </span>
+                  </div>
+                ))}
+                {!dataHealthLoading && !(dataHealth?.tables ?? []).length ? (
+                  <div className="note-row">
+                    <strong>Status</strong>
+                    <span>No data-health response loaded yet.</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="note-list settings-profile-list">
+                {(dataHealth?.checkpoints ?? []).slice(0, 3).map((checkpoint) => (
+                  <div key={checkpoint.source_name} className="note-row">
+                    <strong>{checkpoint.source_name}</strong>
+                    <span>{checkpoint.row_count} rows | {new Date(checkpoint.updated_at).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
             <SectionCard
               title="AI Gap Proposals"
               subtitle="Failure patterns and suggested retrieval updates from recent AI interactions"
+              className="settings-ai-card"
             >
               <div className="admin-ai-toolbar">
                 <div className="admin-ai-toolbar-group">
@@ -3579,68 +3937,7 @@ function App() {
                 </div>
               </div>
             </SectionCard>
-          </section>
-        </>
-      ),
-      Settings: (
-        <>
-          <section className="section-card">
-            <div className="section-card-header">
-              <div>
-                <h3>Anomaly Detection Thresholds</h3>
-                <p>Adjust detection sensitivity for live machine monitoring.</p>
-              </div>
-            </div>
-            <div className="threshold-grid">
-              <label className="threshold-field">
-                <span>OEE Warning Drop (%)</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.5"
-                  value={anomalyThresholds.warningOeeDrop}
-                  onChange={(event) =>
-                    setAnomalyThresholds((current) => ({
-                      ...current,
-                      warningOeeDrop: Number(event.target.value) || 0
-                    }))
-                  }
-                />
-              </label>
-              <label className="threshold-field">
-                <span>Critical OEE Floor (%)</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.5"
-                  value={anomalyThresholds.criticalOee}
-                  onChange={(event) =>
-                    setAnomalyThresholds((current) => ({
-                      ...current,
-                      criticalOee: Number(event.target.value) || 0
-                    }))
-                  }
-                />
-              </label>
-              <label className="threshold-field">
-                <span>Sustained Ticks for Critical</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={anomalyThresholds.sustainedTicks}
-                  onChange={(event) =>
-                    setAnomalyThresholds((current) => ({
-                      ...current,
-                      sustainedTicks: Math.max(1, Number(event.target.value) || 1)
-                    }))
-                  }
-                />
-              </label>
-            </div>
-          </section>
 
-          <section className="tab-grid tab-grid-3 integrations-layout">
             <SectionCard title="Last Sync" subtitle="Recent integration activity and freshness">
               <div className="sync-log">
                 {syncLog.map((entry) => (
@@ -4020,7 +4317,11 @@ function App() {
         </aside>
       </div>
 
-      <PressPanel press={selectedPress} onClose={() => setSelectedPress(null)} />
+      <PressPanel
+        press={selectedPress}
+        onClose={() => setSelectedPress(null)}
+        onSaveMaintenanceNotes={handleSaveMaintenanceNotes}
+      />
       <CalibrationPanel
         instrument={selectedCalibration}
         onClose={() => setSelectedCalibrationAssetTag(null)}

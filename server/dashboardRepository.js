@@ -9,6 +9,18 @@ import {
   removeDemoAlert,
   suppliers
 } from './demoData.js';
+import {
+  createCapa as createDbCapa,
+  createNcr as createDbNcr,
+  listCapas as listDbCapas,
+  listNcrs as listDbNcrs,
+  loadCurrentDomainPayload,
+  replaceCapas as replaceDbCapas,
+  replaceNcrs as replaceDbNcrs,
+  resetCurrentDomainData,
+  updateCapa as updateDbCapa,
+  updateNcr as updateDbNcr
+} from './currentDomainRepository.js';
 
 const ncrStoreByShift = new Map();
 let capaStore = demoCapas.map((capa) => cloneCapa(capa));
@@ -69,6 +81,7 @@ function mapPressRow(row) {
     outputCount: Number(row.output_count),
     downtimeMinutes: Number(row.downtime_minutes),
     currentJob: row.current_job,
+    maintenanceNotes: row.maintenance_notes ?? '',
     sortOrder: Number(row.sort_order)
   };
 }
@@ -105,6 +118,39 @@ function getAllowedUpdatePairs(updates, columnMap) {
   }
 
   return pairs;
+}
+
+async function getDomainPayloadOrFallback(shiftName, fallback) {
+  if (!pool) {
+    return {
+      orders: fallback.orders,
+      materials: fallback.materials,
+      defects: fallback.defects,
+      prevShiftDefects: fallback.prevShiftDefects,
+      ncrs: getMergedNcrs(shiftName),
+      suppliers,
+      employees,
+      capas: getMergedCapas(),
+      calibrations
+    };
+  }
+
+  try {
+    return await loadCurrentDomainPayload(shiftName);
+  } catch (error) {
+    console.warn(`Falling back to demo domain data: ${error.message}`);
+    return {
+      orders: fallback.orders,
+      materials: fallback.materials,
+      defects: fallback.defects,
+      prevShiftDefects: fallback.prevShiftDefects,
+      ncrs: getMergedNcrs(shiftName),
+      suppliers,
+      employees,
+      capas: getMergedCapas(),
+      calibrations
+    };
+  }
 }
 
 function getShiftFallback(shiftName) {
@@ -167,7 +213,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
         [shiftName]
       ),
       pool.query(
-        `select press_name, status, oee, output_count, downtime_minutes, current_job
+        `select press_name, status, oee, output_count, downtime_minutes, current_job, maintenance_notes
          from presses
          where shift_name = $1
          order by sort_order asc`,
@@ -204,6 +250,7 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
 
     const snapshot = snapshotResult.rows[0];
     const fallback = getShiftFallback(shiftName);
+    const domain = await getDomainPayloadOrFallback(shiftName, fallback);
     return {
       metadata: {
         shiftName: snapshot.shift_name,
@@ -233,7 +280,8 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
         oee: toNumber(row.oee),
         outputCount: Number(row.output_count),
         downtimeMinutes: Number(row.downtime_minutes),
-        currentJob: row.current_job
+        currentJob: row.current_job,
+        maintenanceNotes: row.maintenance_notes ?? ''
       })),
       downtime: downtimeResult.rows.map((row) => ({
         reason: row.reason,
@@ -271,10 +319,16 @@ export async function getDashboardPayload(shiftName = 'Shift A') {
 }
 
 export async function listNcrs(shiftName = 'Shift A') {
+  if (pool) {
+    return listDbNcrs(shiftName);
+  }
   return getMergedNcrs(shiftName);
 }
 
 export async function createNcr(shiftName, ncr) {
+  if (pool) {
+    return createDbNcr(shiftName, ncr);
+  }
   const record = cloneNcr({
     ...ncr,
     shiftName
@@ -307,12 +361,13 @@ export async function listPresses(shiftName = 'Shift A') {
       outputCount: press.outputCount,
       downtimeMinutes: press.downtimeMinutes,
       currentJob: press.currentJob,
+      maintenanceNotes: press.maintenanceNotes ?? '',
       sortOrder: index + 1
     }));
   }
 
   const result = await pool.query(
-    `select id, shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, sort_order
+    `select id, shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, maintenance_notes, sort_order
      from presses
      where shift_name = $1
      order by sort_order asc`,
@@ -332,7 +387,8 @@ export async function updatePress(shiftName, pressName, updates) {
     oee: 'oee',
     outputCount: 'output_count',
     downtimeMinutes: 'downtime_minutes',
-    currentJob: 'current_job'
+    currentJob: 'current_job',
+    maintenanceNotes: 'maintenance_notes'
   };
 
   const pairs = getAllowedUpdatePairs(updates, columnMap);
@@ -347,7 +403,7 @@ export async function updatePress(shiftName, pressName, updates) {
     `update presses
      set ${setFragments.join(', ')}
      where shift_name = $1 and press_name = $2
-     returning id, shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, sort_order`,
+     returning id, shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, maintenance_notes, sort_order`,
     values
   );
 
@@ -621,10 +677,10 @@ export async function resetShift(shiftName = null) {
     for (const [i, press] of demo.presses.entries()) {
       await pool.query(
         `insert into presses
-           (shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, sort_order)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+           (shift_name, press_name, status, oee, output_count, downtime_minutes, current_job, maintenance_notes, sort_order)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [shift, press.pressName, press.status, press.oee,
-         press.outputCount, press.downtimeMinutes, press.currentJob, i + 1]
+         press.outputCount, press.downtimeMinutes, press.currentJob, press.maintenanceNotes ?? '', i + 1]
       );
     }
 
@@ -644,6 +700,8 @@ export async function resetShift(shiftName = null) {
       );
     }
 
+    await resetCurrentDomainData(pool, shift);
+
     for (const alert of demo.alerts) {
       await pool.query(
         `insert into alerts (shift_name, severity, title, message, created_at, is_active)
@@ -653,14 +711,24 @@ export async function resetShift(shiftName = null) {
     }
   }
 
+  if (!shiftName) {
+    await resetCurrentDomainData(pool);
+  }
+
   return { reset: shifts, mode: 'db' };
 }
 
 export async function listCapas() {
+  if (pool) {
+    return listDbCapas();
+  }
   return getMergedCapas();
 }
 
 export async function createCapa(capa) {
+  if (pool) {
+    return createDbCapa(capa);
+  }
   const record = cloneCapa({
     ...capa,
     openedDate: capa.openedDate ?? Date.now(),
@@ -672,6 +740,9 @@ export async function createCapa(capa) {
 }
 
 export async function updateCapa(capaId, updates) {
+  if (pool) {
+    return updateDbCapa(capaId, updates);
+  }
   const index = capaStore.findIndex((capa) => capa.id === capaId);
   if (index === -1) return null;
 
@@ -688,6 +759,9 @@ export async function updateCapa(capaId, updates) {
 }
 
 export async function updateNcr(shiftName, ncrId, updates) {
+  if (pool) {
+    return updateDbNcr(shiftName, ncrId, updates);
+  }
   const current = getMergedNcrs(shiftName);
   const index = current.findIndex((ncr) => ncr.id === ncrId);
   if (index === -1) return null;

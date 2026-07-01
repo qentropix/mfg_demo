@@ -13,8 +13,13 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/health",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "health"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
         }
       }
     },
@@ -25,10 +30,18 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/dashboard?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "dashboard"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dashboard"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -38,7 +51,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -46,10 +62,18 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/reset?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "reset"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reset"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -59,7 +83,10 @@
       "request": {
         "method": "PATCH",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -67,10 +94,19 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/dashboard/snapshot?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "dashboard", "snapshot"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dashboard",
+            "snapshot"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -80,7 +116,10 @@
       "request": {
         "method": "PATCH",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -88,10 +127,19 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/presses/Press%2005?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "presses", "Press 05"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "presses",
+            "Press 05"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -101,7 +149,10 @@
       "request": {
         "method": "PATCH",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -109,8 +160,16 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/admin/shifts/{{shift}}/state",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "admin", "shifts", "{{shift}}", "state"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "shifts",
+            "{{shift}}",
+            "state"
+          ]
         }
       }
     },
@@ -119,7 +178,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -127,10 +189,18 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/alerts?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "alerts"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -142,10 +212,19 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/alerts/{{alertId}}?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "alerts", "{{alertId}}"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "alerts",
+            "{{alertId}}"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -155,7 +234,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -163,10 +245,18 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/ncr?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "ncr"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ncr"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -176,7 +266,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -184,10 +277,18 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/capa?shift={{shift}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "capa"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "capa"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
           ]
         }
       }
@@ -197,7 +298,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -205,8 +309,14 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/ai/query",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "ai", "query"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai",
+            "query"
+          ]
         }
       }
     },
@@ -217,11 +327,23 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/history/summary?shift={{shift}}&days=210",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "history", "summary"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "history",
+            "summary"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" },
-            { "key": "days", "value": "210" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            },
+            {
+              "key": "days",
+              "value": "210"
+            }
           ]
         }
       }
@@ -233,12 +355,27 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/history/events?shift={{shift}}&days=30&limit=20",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "history", "events"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "history",
+            "events"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" },
-            { "key": "days", "value": "30" },
-            { "key": "limit", "value": "20" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            },
+            {
+              "key": "days",
+              "value": "30"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            }
           ]
         }
       }
@@ -250,11 +387,23 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/history/insights?shift={{shift}}&days=210",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "history", "insights"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "history",
+            "insights"
+          ],
           "query": [
-            { "key": "shift", "value": "{{shift}}" },
-            { "key": "days", "value": "210" }
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            },
+            {
+              "key": "days",
+              "value": "210"
+            }
           ]
         }
       }
@@ -264,7 +413,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -272,8 +424,14 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/ai/feedback",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "ai", "feedback"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "ai",
+            "feedback"
+          ]
         }
       }
     },
@@ -284,10 +442,19 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/admin/ai-gaps?limit=25",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "admin", "ai-gaps"],
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "ai-gaps"
+          ],
           "query": [
-            { "key": "limit", "value": "25" }
+            {
+              "key": "limit",
+              "value": "25"
+            }
           ]
         }
       }
@@ -297,7 +464,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -305,8 +475,15 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/admin/ai-gaps/analyze",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "admin", "ai-gaps", "analyze"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "ai-gaps",
+            "analyze"
+          ]
         }
       }
     },
@@ -315,7 +492,10 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "body": {
           "mode": "raw",
@@ -323,8 +503,16 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/admin/ai-gaps/{{gapId}}/propose",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "admin", "ai-gaps", "{{gapId}}", "propose"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "ai-gaps",
+            "{{gapId}}",
+            "propose"
+          ]
         }
       }
     },
@@ -335,8 +523,397 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/admin/ai-gaps/{{gapId}}/approve",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "admin", "ai-gaps", "{{gapId}}", "approve"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "ai-gaps",
+            "{{gapId}}",
+            "approve"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Data Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/data-health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "data-health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Current Domain Snapshot",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/domain/current?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "domain",
+            "current"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Order",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/WO-2047?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "WO-2047"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"qtyProduced\": 920,\n  \"status\": \"On Track\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Update Material",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/materials/MAT-1042?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "materials",
+            "MAT-1042"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stockQty\": 120,\n  \"dailyUsageRate\": 85\n}"
+        }
+      }
+    },
+    {
+      "name": "Update Supplier",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/suppliers/SUP-003",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "suppliers",
+            "SUP-003"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Approved\",\n  \"riskLevel\": \"Low\",\n  \"auditScore\": 91\n}"
+        }
+      }
+    },
+    {
+      "name": "Schedule Supplier Audit",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/suppliers/SUP-004/audits",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "suppliers",
+            "SUP-004",
+            "audits"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"scheduledDate\": \"2026-07-05\",\n  \"notes\": \"Follow up on delayed polymer shipments\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Update Workforce Employee",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/workforce/EMP-1042?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "workforce",
+            "EMP-1042"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftStatus\": \"Active\",\n  \"assignedMachine\": \"Press 05\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Log Employee Certification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/workforce/EMP-1042/certifications?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "workforce",
+            "EMP-1042",
+            "certifications"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Machine Operation - Press 05\",\n  \"issuedDate\": \"2026-06-30\",\n  \"expiryDate\": \"2027-06-30\",\n  \"issuedBy\": \"Internal QA\",\n  \"status\": \"Current\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Update Defect Theme",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/defects?shift={{shift}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "defects"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"Dimensional Variance\",\n  \"count\": 4,\n  \"trend\": \"down\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Create Calibration Instrument",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/calibrations",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "calibrations"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"assetTag\": \"INST-NEW-001\",\n  \"name\": \"Digital Height Gauge\",\n  \"type\": \"Gauge\",\n  \"location\": \"Metrology Lab\",\n  \"intervalDays\": 180,\n  \"lastCalibrated\": \"2026-06-01\",\n  \"nextDue\": \"2026-11-28\",\n  \"certNumber\": \"CAL-NEW-001\",\n  \"calibratedBy\": \"Internal QA\",\n  \"results\": {\n    \"measured\": \"100.00mm\",\n    \"tolerance\": \"+/-0.02mm\",\n    \"outcome\": \"Pass\"\n  },\n  \"status\": \"Current\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Update Calibration Instrument",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/calibrations/INST-G-041",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "calibrations",
+            "INST-G-041"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Current\",\n  \"lastScheduledAt\": \"2026-07-05\",\n  \"scheduledProvider\": \"Internal QA\",\n  \"scheduledType\": \"Internal\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Export Daily Report CSV",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/reports/daily/export?shift={{shift}}&reportDate=2026-06-15&format=csv",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "daily",
+            "export"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            },
+            {
+              "key": "reportDate",
+              "value": "2026-06-15"
+            },
+            {
+              "key": "format",
+              "value": "csv"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Export Daily Report PDF",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/reports/daily/export?shift={{shift}}&reportDate=2026-06-15&format=pdf",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "reports",
+            "daily",
+            "export"
+          ],
+          "query": [
+            {
+              "key": "shift",
+              "value": "{{shift}}"
+            },
+            {
+              "key": "reportDate",
+              "value": "2026-06-15"
+            },
+            {
+              "key": "format",
+              "value": "pdf"
+            }
+          ]
         }
       }
     }

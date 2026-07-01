@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AreaChart,
   Area,
@@ -88,25 +88,64 @@ const TOOLTIP_STYLE = {
   fontSize: '12px'
 };
 
-export default function PressPanel({ press, onClose }) {
+export default function PressPanel({ press, onClose, onSaveMaintenanceNotes }) {
+  const details = press
+    ? PRESS_DETAILS[press.pressName] ?? {
+        jobs: [{ id: 'JB-0000', part: 'Unknown Job', qty: 0 }],
+        note: 'No maintenance notes on record.'
+      }
+    : { jobs: [], note: '' };
+  const savedNote = press?.maintenanceNotes ?? details.note;
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState('');
+
+  useEffect(() => {
+    setNoteDraft(savedNote);
+    setIsEditingNote(false);
+    setIsSavingNote(false);
+    setNoteError('');
+  }, [press?.pressName, savedNote]);
+
   useEffect(() => {
     if (!press) return;
     const handle = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (isEditingNote) {
+        setNoteDraft(savedNote);
+        setIsEditingNote(false);
+        setNoteError('');
+        return;
+      }
+      onClose();
     };
     document.addEventListener('keydown', handle);
     return () => document.removeEventListener('keydown', handle);
-  }, [press, onClose]);
+  }, [press, onClose, isEditingNote, savedNote]);
+
+  const handleSaveNote = async (event) => {
+    event.preventDefault();
+    if (!onSaveMaintenanceNotes || isSavingNote) return;
+
+    setIsSavingNote(true);
+    setNoteError('');
+    try {
+      const updatedPress = await onSaveMaintenanceNotes(press.pressName, noteDraft);
+      setNoteDraft(updatedPress?.maintenanceNotes ?? noteDraft.trim());
+      setIsEditingNote(false);
+    } catch (error) {
+      setNoteError(error.message || 'Could not save maintenance notes.');
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
 
   if (!press) return null;
 
   const tone = statusTone(press.status);
   const toneColor =
     tone === 'danger' ? 'var(--danger)' : tone === 'warning' ? 'var(--warning)' : 'var(--success)';
-  const details = PRESS_DETAILS[press.pressName] ?? {
-    jobs: [{ id: 'JB-0000', part: 'Unknown Job', qty: 0 }],
-    note: 'No maintenance notes on record.'
-  };
   const trend = genTrend(press);
 
   return (
@@ -207,7 +246,48 @@ export default function PressPanel({ press, onClose }) {
 
         <div className="press-panel-section">
           <h4>Maintenance Notes</h4>
-          <p className="press-panel-note">{details.note}</p>
+          {isEditingNote ? (
+            <form className="press-panel-note-form" onSubmit={handleSaveNote}>
+              <textarea
+                className="press-panel-note-input"
+                value={noteDraft}
+                onChange={(event) => setNoteDraft(event.target.value)}
+                maxLength={2000}
+                rows={5}
+                autoFocus
+                disabled={isSavingNote}
+                aria-label={`Maintenance notes for ${press.pressName}`}
+              />
+              {noteError ? <p className="press-panel-note-error" role="alert">{noteError}</p> : null}
+              <div className="press-panel-note-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setNoteDraft(savedNote);
+                    setIsEditingNote(false);
+                    setNoteError('');
+                  }}
+                  disabled={isSavingNote}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={isSavingNote}>
+                  {isSavingNote ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="press-panel-note press-panel-note-button"
+              onClick={() => setIsEditingNote(true)}
+              aria-label={`Edit maintenance notes for ${press.pressName}`}
+            >
+              <span>{savedNote || 'No maintenance notes on record.'}</span>
+              <small>Click to edit</small>
+            </button>
+          )}
         </div>
       </aside>
     </div>

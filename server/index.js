@@ -29,10 +29,26 @@ import {
 } from './dashboardRepository.js';
 import { getHistoryDay, listHistoryEvents, listHistoryEventsForDay, listHistoryInsights, listHistorySummary } from './historyRepository.js';
 import { buildDailyReportText, streamCompletion } from './aiService.js';
+import { buildReportCsv, buildReportPdf } from './reportExport.js';
 import { analyzeAiFailures, approveRetrievalGap, finishAiInteraction, getRetrievalGapById, listRetrievalGaps, proposeRetrievalGap, recordAiFeedback, recordAiFailure, startAiInteraction } from './aiTelemetry.js';
 import { calibrations, employees, suppliers } from './demoData.js';
 import { broadcastDashboardUpdate, subscribeDashboardUpdates } from './realtime.js';
 import { resolveRetrievalAnswer } from './retrievalEngine.js';
+import { registerRetrievalRoutes } from './retrievalLayer.js';
+import {
+  getDataHealth,
+  logEmployeeCertification,
+  replaceCapas as replaceDbCapas,
+  replaceNcrs as replaceDbNcrs,
+  scheduleSupplierAudit,
+  updateCalibration,
+  updateEmployee,
+  updateMaterial,
+  updateOrder,
+  updateSupplier,
+  upsertCalibration,
+  upsertDefect
+} from './currentDomainRepository.js';
 
 dotenv.config();
 
@@ -272,11 +288,11 @@ async function buildDashboardContext(shiftName) {
     prevShiftDefects: dashboard.prevShiftDefects ?? [],
     ncrs,
     openNcrs,
-    suppliers,
-    employees,
+    suppliers: dashboard.suppliers ?? [],
+    employees: dashboard.employees ?? [],
     capas: allCapas,
     overdueCapas,
-    calibrations,
+    calibrations: dashboard.calibrations ?? [],
     alerts: dashboard.alerts ?? []
   };
 }
@@ -618,6 +634,146 @@ app.get('/api/dashboard', async (request, response) => {
   response.json(payload);
 });
 
+
+app.get('/api/admin/data-health', async (_request, response) => {
+  try {
+    response.json(await getDataHealth());
+  } catch (error) {
+    sendError(response, 500, error.message);
+  }
+});
+
+app.get('/api/domain/current', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  const dashboard = await getDashboardPayload(shiftName);
+  response.json({
+    shiftName,
+    orders: dashboard.orders ?? [],
+    materials: dashboard.materials ?? [],
+    suppliers: dashboard.suppliers ?? [],
+    employees: dashboard.employees ?? [],
+    defects: dashboard.defects ?? [],
+    prevShiftDefects: dashboard.prevShiftDefects ?? [],
+    ncrs: dashboard.ncrs ?? [],
+    capas: dashboard.capas ?? [],
+    calibrations: dashboard.calibrations ?? []
+  });
+});
+
+app.patch('/api/orders/:orderId', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  try {
+    const order = await updateOrder(request.params.orderId, shiftName, request.body ?? {});
+    if (!order) return sendError(response, 404, 'Order not found for the given shift.');
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.json({ message: 'Order updated successfully.', order, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.patch('/api/materials/:materialCode', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  try {
+    const material = await updateMaterial(request.params.materialCode, shiftName, request.body ?? {});
+    if (!material) return sendError(response, 404, 'Material not found for the given shift.');
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.json({ message: 'Material updated successfully.', material, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.patch('/api/suppliers/:supplierId', async (request, response) => {
+  try {
+    const supplier = await updateSupplier(request.params.supplierId, request.body ?? {});
+    if (!supplier) return sendError(response, 404, 'Supplier not found.');
+    for (const shift of await getShifts()) {
+      broadcastDashboardUpdate(shift);
+    }
+    response.json({ message: 'Supplier updated successfully.', supplier });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.post('/api/suppliers/:supplierId/audits', async (request, response) => {
+  try {
+    const audit = await scheduleSupplierAudit(request.params.supplierId, request.body ?? {});
+    for (const shift of await getShifts()) {
+      broadcastDashboardUpdate(shift);
+    }
+    response.status(201).json({ message: 'Supplier audit scheduled successfully.', audit });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.patch('/api/workforce/:employeeId', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  try {
+    const employee = await updateEmployee(request.params.employeeId, shiftName, request.body ?? {});
+    if (!employee) return sendError(response, 404, 'Employee not found for the given shift.');
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.json({ message: 'Employee updated successfully.', employee, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.post('/api/workforce/:employeeId/certifications', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  try {
+    const employee = await logEmployeeCertification(request.params.employeeId, shiftName, request.body ?? {});
+    if (!employee) return sendError(response, 404, 'Employee not found for the given shift.');
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.status(201).json({ message: 'Certification logged successfully.', employee, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.post('/api/defects', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  try {
+    const defect = await upsertDefect(shiftName, request.body ?? {});
+    const dashboard = await getDashboardPayload(shiftName);
+    broadcastDashboardUpdate(shiftName);
+    response.json({ message: 'Defect updated successfully.', defect, dashboard });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.post('/api/calibrations', async (request, response) => {
+  try {
+    const instrument = await upsertCalibration(request.body ?? {});
+    for (const shift of await getShifts()) {
+      broadcastDashboardUpdate(shift);
+    }
+    response.status(201).json({ message: 'Calibration instrument saved successfully.', instrument });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
+app.patch('/api/calibrations/:assetTag', async (request, response) => {
+  try {
+    const instrument = await updateCalibration(request.params.assetTag, request.body ?? {});
+    if (!instrument) return sendError(response, 404, 'Calibration instrument not found.');
+    for (const shift of await getShifts()) {
+      broadcastDashboardUpdate(shift);
+    }
+    response.json({ message: 'Calibration instrument updated successfully.', instrument });
+  } catch (error) {
+    sendError(response, 400, error.message);
+  }
+});
+
 app.get('/api/presses', async (request, response) => {
   const shift = resolveShiftName(request);
   const presses = await listPresses(shift);
@@ -627,10 +783,18 @@ app.get('/api/presses', async (request, response) => {
 app.patch('/api/presses/:pressName', async (request, response) => {
   const shiftName = resolveShiftName(request);
   const pressName = request.params.pressName;
-  const { status, oee, outputCount, downtimeMinutes, currentJob } = request.body || {};
+  const { status, oee, outputCount, downtimeMinutes, currentJob, maintenanceNotes } = request.body || {};
 
-  if ([status, oee, outputCount, downtimeMinutes, currentJob].every((value) => value === undefined)) {
+  if ([status, oee, outputCount, downtimeMinutes, currentJob, maintenanceNotes].every((value) => value === undefined)) {
     return sendError(response, 400, 'Provide at least one field to update.');
+  }
+
+  if (maintenanceNotes !== undefined && typeof maintenanceNotes !== 'string') {
+    return sendError(response, 400, 'maintenanceNotes must be a string.');
+  }
+
+  if (maintenanceNotes?.length > 2000) {
+    return sendError(response, 400, 'maintenanceNotes must be 2000 characters or fewer.');
   }
 
   try {
@@ -639,7 +803,8 @@ app.patch('/api/presses/:pressName', async (request, response) => {
       oee,
       outputCount,
       downtimeMinutes,
-      currentJob
+      currentJob,
+      maintenanceNotes: maintenanceNotes?.trim()
     });
 
     if (!press) {
@@ -761,11 +926,19 @@ app.patch('/api/admin/shifts/:shiftName/state', async (request, response) => {
     }
 
     if (Array.isArray(ncrs)) {
-      replaceMergedNcrs(shiftName, ncrs);
+      if (process.env.DATABASE_URL) {
+        await replaceDbNcrs(shiftName, ncrs);
+      } else {
+        replaceMergedNcrs(shiftName, ncrs);
+      }
     }
 
     if (Array.isArray(capas)) {
-      replaceMergedCapas(capas);
+      if (process.env.DATABASE_URL) {
+        await replaceDbCapas(capas);
+      } else {
+        replaceMergedCapas(capas);
+      }
     }
 
     const dashboard = await getDashboardPayload(shiftName);
@@ -822,7 +995,7 @@ app.post('/api/ncr', async (request, response) => {
   try {
     const created = await createNcr(shiftName, record);
     broadcastDashboardUpdate(shiftName);
-    response.status(201).json({ message: 'NCR created successfully.', ncr: created, mode: 'demo' });
+    response.status(201).json({ message: 'NCR created successfully.', ncr: created, mode: process.env.DATABASE_URL ? 'db' : 'demo' });
   } catch (error) {
     sendError(response, 400, error.message);
   }
@@ -846,7 +1019,7 @@ app.post('/api/capa', async (request, response) => {
       openedDate: body.openedDate ?? Date.now(),
       stageHistory: body.stageHistory ?? [{ stage: 'Open', timestamp: body.openedDate ?? Date.now() }]
     });
-    response.status(201).json({ message: 'CAPA created successfully.', capa, mode: 'demo' });
+    response.status(201).json({ message: 'CAPA created successfully.', capa, mode: process.env.DATABASE_URL ? 'db' : 'demo' });
   } catch (error) {
     sendError(response, 400, error.message);
   }
@@ -869,7 +1042,7 @@ app.patch('/api/capa/:id', async (request, response) => {
       await updateNcr(shiftName, capa.ncrId, { status: 'Closed' });
     }
 
-    response.json({ message: 'CAPA updated successfully.', capa, mode: 'demo' });
+    response.json({ message: 'CAPA updated successfully.', capa, mode: process.env.DATABASE_URL ? 'db' : 'demo' });
   } catch (error) {
     sendError(response, 400, error.message);
   }
@@ -1363,6 +1536,65 @@ app.post('/api/reports/daily', async (request, response) => {
   });
 });
 
+app.get('/api/reports/daily/export', async (request, response) => {
+  const shiftName = resolveShiftName(request);
+  const format = typeof request.query.format === 'string' && request.query.format.trim()
+    ? request.query.format.trim().toLowerCase()
+    : 'csv';
+  const reportDateValue = typeof request.query.reportDate === 'string' && request.query.reportDate.trim()
+    ? request.query.reportDate.trim()
+    : typeof request.query.date === 'string'
+      ? request.query.date.trim()
+      : '';
+  const reportDate = reportDateValue ? resolveReportDateValue(reportDateValue) : null;
+  const reportDateKey = reportDate ? formatLocalDateKey(reportDate) : null;
+
+  if (!['csv', 'pdf'].includes(format)) {
+    return sendError(response, 400, 'format must be csv or pdf.');
+  }
+
+  if (!reportDateKey) {
+    return sendError(response, 400, 'Provide a valid reportDate like 2026-06-15 or 15 June.');
+  }
+
+  const [historyDay, reportDayEvents] = await Promise.all([
+    getHistoryDay(shiftName, reportDateKey),
+    listHistoryEventsForDay(shiftName, reportDateKey)
+  ]);
+
+  if (!historyDay) {
+    return sendError(response, 404, `No historical data found for ${shiftName} on ${reportDateKey}.`);
+  }
+
+  const reportText = buildDailyReportText({
+    shiftName,
+    reportDate: reportDateKey,
+    historyDay,
+    reportDayEvents,
+    strictHistoryReport: true
+  });
+  const exportPayload = {
+    shiftName,
+    reportDate: reportDateKey,
+    historyDay,
+    reportDayEvents,
+    reportText
+  };
+  const safeShiftName = shiftName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'shift';
+  const filename = `daily-report-${safeShiftName}-${reportDateKey}.${format}`;
+
+  response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  if (format === 'csv') {
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return response.send(buildReportCsv(exportPayload));
+  }
+
+  const pdfBuffer = buildReportPdf(exportPayload);
+  response.setHeader('Content-Type', 'application/pdf');
+  response.setHeader('Content-Length', String(pdfBuffer.length));
+  return response.send(pdfBuffer);
+});
+
 app.post('/api/ai/feedback', async (request, response) => {
   const requestId = typeof request.body?.requestId === 'string' && request.body.requestId.trim() ? request.body.requestId.trim() : randomUUID();
   const shiftName = typeof request.body?.shiftName === 'string' && request.body.shiftName.trim() ? request.body.shiftName.trim() : resolveShiftName(request);
@@ -1483,6 +1715,8 @@ app.delete('/api/alerts/:id', async (request, response) => {
 });
 
 await startNotificationBridge();
+
+registerRetrievalRoutes(app);
 
 const canServeClient = await access(clientDist).then(() => true).catch(() => false);
 

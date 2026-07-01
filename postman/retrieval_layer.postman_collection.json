@@ -1,0 +1,257 @@
+{
+  "info": {
+    "name": "MFG Demo Retrieval Layer",
+    "_postman_id": "5c02cc63-279e-4e12-9153-retrieval-layer",
+    "description": "Generic retrieval-layer APIs for Ask AI: query understanding, entity resolution, metrics, comparisons, rankings, domain search, events, relations, reports, evidence and safe SQL.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "shiftName",
+      "value": "Shift A"
+    }
+  ],
+  "item": [
+    {
+      "name": "Catalog",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/retrieval/catalog"
+      }
+    },
+    {
+      "name": "Current State",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/retrieval/current-state?shift={{shiftName}}"
+      }
+    },
+    {
+      "name": "Understand Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"Downtime in Shift A on 10th June 2026 vs 11th June 2026\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/understand"
+      }
+    },
+    {
+      "name": "Resolve Entity",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text\": \"What is the status of press five?\",\n  \"entityTypes\": [\"machine\"]\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/entities/resolve"
+      }
+    },
+    {
+      "name": "Metrics Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"metrics\": [\"overall_oee\", \"total_output\", \"downtime_minutes\"],\n  \"startDate\": \"2026-06-10\",\n  \"endDate\": \"2026-06-11\",\n  \"grain\": \"day\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/metrics/query"
+      }
+    },
+    {
+      "name": "Compare",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"Compare downtime on 10th June 2026 vs 11th June 2026 for Shift A\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/compare"
+      }
+    },
+    {
+      "name": "Rank Machines",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"domain\": \"machines\",\n  \"shiftName\": \"{{shiftName}}\",\n  \"query\": \"Which machine has the lowest OEE?\",\n  \"limit\": 5\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/rank"
+      }
+    },
+    {
+      "name": "Domain Search",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"domain\": \"calibration\",\n  \"shiftName\": \"{{shiftName}}\",\n  \"query\": \"overdue instruments\",\n  \"limit\": 20\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/domain/search"
+      }
+    },
+    {
+      "name": "Timeseries",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"metrics\": [\"overall_oee\", \"downtime_minutes\"],\n  \"startDate\": \"2026-03-01\",\n  \"endDate\": \"2026-06-26\",\n  \"grain\": \"month\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/timeseries"
+      }
+    },
+    {
+      "name": "Events Search",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"query\": \"Press 05 downtime\",\n  \"startDate\": \"2026-06-01\",\n  \"endDate\": \"2026-06-30\",\n  \"limit\": 10\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/events/search"
+      }
+    },
+    {
+      "name": "Relations Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"leftDomain\": \"ncr\",\n  \"rightDomain\": \"capa\",\n  \"joinBy\": [\"ncrId\", \"machine\"],\n  \"limit\": 20\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/relations/query"
+      }
+    },
+    {
+      "name": "History Summary",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"metrics\": [\"total_output\", \"overall_oee\", \"quality_rate\"],\n  \"startDate\": \"2026-03-01\",\n  \"endDate\": \"2026-03-31\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/history/summary"
+      }
+    },
+    {
+      "name": "Report Query",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shiftName\": \"{{shiftName}}\",\n  \"reportDate\": \"2026-06-15\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/reports/query"
+      }
+    },
+    {
+      "name": "Evidence",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"kind\": \"metrics\",\n  \"shiftName\": \"{{shiftName}}\",\n  \"metric\": \"overall_oee\",\n  \"date\": \"2026-06-10\"\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/evidence"
+      }
+    },
+    {
+      "name": "Safe SQL From Question",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"Total output on 10 June 2026 for Shift A\",\n  \"limit\": 20\n}"
+        },
+        "url": "{{baseUrl}}/api/retrieval/sql/query"
+      }
+    }
+  ]
+}

@@ -229,12 +229,12 @@ const demoByShift = {
       createMaterial('MAT-6280', 'Powder Coating Black', 'kg', 75, 30, 200, 8)
     ],
     presses: [
-      { pressName: 'Press 01', status: 'Running', oee: 85, outputCount: 3246, downtimeMinutes: 18, currentJob: 'Auto Door Panels' },
-      { pressName: 'Press 02', status: 'Running', oee: 82, outputCount: 3012, downtimeMinutes: 22, currentJob: 'Side Frame Batch' },
-      { pressName: 'Press 03', status: 'Running', oee: 75, outputCount: 2789, downtimeMinutes: 35, currentJob: 'Hinge Mount Kits' },
-      { pressName: 'Press 04', status: 'Minor Stop', oee: 60, outputCount: 2105, downtimeMinutes: 62, currentJob: 'Reinforcement Brackets' },
-      { pressName: 'Press 05', status: 'Down', oee: 0, outputCount: 0, downtimeMinutes: 14, currentJob: 'Tool Change Queue' },
-      { pressName: 'Press 06', status: 'Running', oee: 88, outputCount: 3890, downtimeMinutes: 12, currentJob: 'Latch Assembly' }
+      { pressName: 'Press 01', status: 'Running', oee: 85, outputCount: 3246, downtimeMinutes: 18, currentJob: 'Auto Door Panels', maintenanceNotes: 'PM completed last Friday. No open maintenance items. Next scheduled PM in 3 weeks.' },
+      { pressName: 'Press 02', status: 'Running', oee: 82, outputCount: 3012, downtimeMinutes: 22, currentJob: 'Side Frame Batch', maintenanceNotes: 'Tooling replaced last Tuesday. Minor wear on die face - inspect at next 10k cycles.' },
+      { pressName: 'Press 03', status: 'Running', oee: 75, outputCount: 2789, downtimeMinutes: 35, currentJob: 'Hinge Mount Kits', maintenanceNotes: 'Hydraulic fluid changed last cycle. Slight vibration at high-speed run - monitored.' },
+      { pressName: 'Press 04', status: 'Minor Stop', oee: 60, outputCount: 2105, downtimeMinutes: 62, currentJob: 'Reinforcement Brackets', maintenanceNotes: 'Minor stop pattern under investigation. Quality hold cleared after recalibration at 08:58.' },
+      { pressName: 'Press 05', status: 'Down', oee: 0, outputCount: 0, downtimeMinutes: 14, currentJob: 'Tool Change Queue', maintenanceNotes: 'SAFETY LOCKOUT ACTIVE - Hydraulic pressure below threshold. Maintenance team on site.' },
+      { pressName: 'Press 06', status: 'Running', oee: 88, outputCount: 3890, downtimeMinutes: 12, currentJob: 'Latch Assembly', maintenanceNotes: 'Running at rated speed. Last inspection clear. No open maintenance items.' }
     ],
     downtime: [
       { reason: 'Tool Change', minutes: 135, percent: 37.7 },
@@ -373,12 +373,12 @@ const demoByShift = {
       createMaterial('MAT-6280', 'Powder Coating Black', 'kg', 82, 30, 200, 7.5)
     ],
     presses: [
-      { pressName: 'Press 01', status: 'Running', oee: 81, outputCount: 2988, downtimeMinutes: 19, currentJob: 'Auto Door Panels' },
-      { pressName: 'Press 02', status: 'Running', oee: 79, outputCount: 2840, downtimeMinutes: 23, currentJob: 'Side Frame Batch' },
-      { pressName: 'Press 03', status: 'Minor Stop', oee: 68, outputCount: 2514, downtimeMinutes: 41, currentJob: 'Hinge Mount Kits' },
-      { pressName: 'Press 04', status: 'Running', oee: 72, outputCount: 2652, downtimeMinutes: 29, currentJob: 'Reinforcement Brackets' },
-      { pressName: 'Press 05', status: 'Down', oee: 0, outputCount: 0, downtimeMinutes: 88, currentJob: 'Maintenance Hold' },
-      { pressName: 'Press 06', status: 'Running', oee: 86, outputCount: 3421, downtimeMinutes: 15, currentJob: 'Latch Assembly' }
+      { pressName: 'Press 01', status: 'Running', oee: 81, outputCount: 2988, downtimeMinutes: 19, currentJob: 'Auto Door Panels', maintenanceNotes: 'PM completed last Friday. No open maintenance items. Next scheduled PM in 3 weeks.' },
+      { pressName: 'Press 02', status: 'Running', oee: 79, outputCount: 2840, downtimeMinutes: 23, currentJob: 'Side Frame Batch', maintenanceNotes: 'Tooling replaced last Tuesday. Minor wear on die face - inspect at next 10k cycles.' },
+      { pressName: 'Press 03', status: 'Minor Stop', oee: 68, outputCount: 2514, downtimeMinutes: 41, currentJob: 'Hinge Mount Kits', maintenanceNotes: 'Hydraulic fluid changed last cycle. Slight vibration at high-speed run - monitored.' },
+      { pressName: 'Press 04', status: 'Running', oee: 72, outputCount: 2652, downtimeMinutes: 29, currentJob: 'Reinforcement Brackets', maintenanceNotes: 'Minor stop pattern under investigation. Quality hold cleared after recalibration at 08:58.' },
+      { pressName: 'Press 05', status: 'Down', oee: 0, outputCount: 0, downtimeMinutes: 88, currentJob: 'Maintenance Hold', maintenanceNotes: 'SAFETY LOCKOUT ACTIVE - Hydraulic pressure below threshold. Maintenance team on site.' },
+      { pressName: 'Press 06', status: 'Running', oee: 86, outputCount: 3421, downtimeMinutes: 15, currentJob: 'Latch Assembly', maintenanceNotes: 'Running at rated speed. Last inspection clear. No open maintenance items.' }
     ],
     downtime: [
       { reason: 'Tool Change', minutes: 148, percent: 35.5 },
